@@ -60,7 +60,7 @@ app.post('/api/auth/google', async (req, res) => {
       user = new User({
         name: name,
         email: email,
-        // Le creamos una contraseña aleatoria porque siempre entrará con Google
+        username: email.split('@')[0] + Math.floor(Math.random() * 1000), // <-- Le inventamos un usuario único
         password: Math.random().toString(36).slice(-10), 
         initials: name.substring(0, 2).toUpperCase()
       });
