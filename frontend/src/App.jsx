@@ -115,8 +115,9 @@ function IdearbolApp() {
 
 
   // --- LÓGICA DE DRAG & DROP PARA CONEXIONES ---
-  const onDragStartInventory = (event, nodeData) => {
-    event.dataTransfer.setData('application/reactflow', JSON.stringify(nodeData));
+  const onDragStartInventory = (event, fullNode) => {
+    // CAMBIO: Ahora pasamos el nodo COMPLETO (fullNode) para no perder su ID original
+    event.dataTransfer.setData('application/reactflow', JSON.stringify(fullNode));
     event.dataTransfer.effectAllowed = 'move';
   };
 
@@ -131,17 +132,18 @@ function IdearbolApp() {
     const nodeDataStr = event.dataTransfer.getData('application/reactflow');
     if (!nodeDataStr) return;
     
-    const nodeData = JSON.parse(nodeDataStr);
+    const fullNode = JSON.parse(nodeDataStr);
     const position = project({
       x: event.clientX - reactFlowBounds.left,
       y: event.clientY - reactFlowBounds.top,
     });
 
     const newNode = {
-      id: `net-${nodeData.id}-${Date.now()}`, 
+      id: `net-${fullNode.id}`, // Usamos su ID original para evitar duplicados
       type: 'network',
       position,
-      data: { ...nodeData }, 
+      // CAMBIO CLAVE: Guardamos el 'originalId' para saber quién es quién
+      data: { ...fullNode.data, originalId: fullNode.id }, 
     };
     setNetworkNodes((nds) => nds.concat(newNode));
   }, [project, setNetworkNodes]);
@@ -406,11 +408,15 @@ function IdearbolApp() {
                     {/* INVENTARIO IZQUIERDO */}
                     <div className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 shrink-0 overflow-y-auto z-10 flex flex-col gap-3 shadow-xl">
                       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Arrastra al lienzo</h3>
-                      {nodes.filter(n => n.data.projectId === activeProjectId).map(n => (
+                      {nodes
+                        .filter(n => n.data.projectId === activeProjectId)
+                        // 👇 EL FILTRO MÁGICO: Si el nodo ya está en el lienzo (networkNodes), lo ocultamos de aquí
+                        .filter(n => !networkNodes.some(netNode => netNode.data.originalId === n.id))
+                        .map(n => (
                         <div 
                           key={n.id} 
                           draggable 
-                          onDragStart={(e) => onDragStartInventory(e, n.data)}
+                          onDragStart={(e) => onDragStartInventory(e, n)} // Pasamos 'n' completo
                           className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group"
                         >
                           <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
@@ -418,6 +424,11 @@ function IdearbolApp() {
                           <span className="text-sm font-medium text-slate-300 truncate">{n.data.label || 'Sin título'}</span>
                         </div>
                       ))}
+                      
+                      {/* Mensaje por si ya arrastró todo */}
+                      {nodes.filter(n => n.data.projectId === activeProjectId && !networkNodes.some(netNode => netNode.data.originalId === n.id)).length === 0 && (
+                        <p className="text-xs text-slate-500 text-center mt-4 italic">Todos los nodos están en el lienzo.</p>
+                      )}
                     </div>
                     
                     {/* LA PIZARRA CONECTORA */}
