@@ -1,10 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { 
-  Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, 
-  ChevronRight, ChevronLeft, ArrowLeft, Edit3, LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, 
-  ListTree, LayoutGrid, Network, FolderClosed, FolderOpen, MoreHorizontal, GripVertical
-} from 'lucide-react';
-import ReactFlow, { Background, Controls, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge } from 'reactflow';
+import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
+  LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
+  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2 } from 'lucide-react';
+import ReactFlow, { Background, Controls, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
 import 'reactflow/dist/style.css';
 
 import CustomNode from './CustomNode';
@@ -44,6 +42,10 @@ function IdearbolApp() {
   // --- NUEVOS ESTADOS PARA EL LIENZO DE CONEXIONES ---
   const [networkNodes, setNetworkNodes, onNetworkNodesChange] = useNodesState([]);
   const [networkEdges, setNetworkEdges, onNetworkEdgesChange] = useEdgesState([]);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const [isOverTrash, setIsOverTrash] = useState(false);
+
+  const [toastMessage, setToastMessage] = useState(null);
 
   const [boards, setBoards] = useState([]); // Lista de todas las pizarras del usuario
   const [activeBoard, setActiveBoard] = useState(null); // La pizarra que tenemos abierta
@@ -152,12 +154,98 @@ function IdearbolApp() {
     } catch (err) { console.error("Error al crear pizarra:", err); }
   };
 
+  const handleSaveBoard = async () => {
+    if (!activeBoard) return;
+    
+    // Empaquetamos la información actual del lienzo
+    const payload = {
+      name: activeBoard.name,
+      linkedProjects: activeBoard.linkedProjects,
+      nodes: networkNodes,
+      edges: networkEdges
+    };
+
+    try {
+      const res = await fetch(`https://idearbol.onrender.com/api/boards/${activeBoard._id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const updatedBoard = await res.json();
+      
+      // Actualizamos la lista de pizarras con la información fresca
+      setBoards(boards.map(b => b._id === updatedBoard._id ? updatedBoard : b));
+      setToastMessage('¡Pizarra guardada con éxito! 💾');
+      setTimeout(() => setToastMessage(null), 3000); // Se borra en 3 segundos
+    } catch (err) {
+      console.error("Error al guardar la pizarra:", err);
+      alert('Hubo un error al guardar');
+    }
+  };
+
+  // --- FUNCIÓN PARA ELIMINAR UNA PIZARRA COMPLETA ---
+  const handleDeleteBoard = async (event, boardId) => {
+    event.stopPropagation(); // Evita que al dar clic al basurero se abra la pizarra
+    if (!window.confirm("¿Estás seguro de que quieres eliminar esta pizarra?")) return;
+    
+    try {
+      await fetch(`https://idearbol.onrender.com/api/boards/${boardId}`, { method: 'DELETE' });
+      setBoards(boards.filter(b => b._id !== boardId)); // La quitamos de la pantalla
+      if (activeBoard?._id === boardId) setActiveBoard(null);
+    } catch (err) {
+      console.error("Error al eliminar la pizarra:", err);
+    }
+  };
+
+  // --- FUNCIÓN PARA QUITAR UN NODO DEL LIENZO (DOBLE CLIC) ---
+  const onNetworkNodeDoubleClick = useCallback((event, node) => {
+    event.stopPropagation();
+    // 1. Quitamos el nodo del lienzo (esto hará que regrese al inventario automáticamente)
+    setNetworkNodes((nds) => nds.filter((n) => n.id !== node.id));
+    // 2. Quitamos cualquier flecha que estuviera conectada a este nodo
+    setNetworkEdges((eds) => eds.filter((e) => e.source !== node.id && e.target !== node.id));
+  }, [setNetworkNodes, setNetworkEdges]);
+
+  // --- INICIA EL ARRASTRE: Aparece el basurero flotante ---
+  const onNodeDragStartNetwork = useCallback((event, node) => {
+    setIsDraggingNode(true);
+  }, []);
+
+  // --- TERMINA EL ARRASTRE: Evaluamos si cayó en el basurero ---
+  const onNodeDragStopNetwork = useCallback((event, node) => {
+    setIsDraggingNode(false); // Ocultamos el basurero
+    
+    // Si soltamos el click mientras el mouse estaba sobre la zona roja...
+    if (isOverTrash) {
+      setNetworkNodes((nds) => nds.filter((n) => n.id !== node.id));
+      setNetworkEdges((eds) => eds.filter((e) => e.source !== node.id && e.target !== node.id));
+      setIsOverTrash(false); // Reseteamos el radar
+    }
+  }, [isOverTrash, setNetworkNodes, setNetworkEdges]);
+  
   // --- LÓGICA DE DRAG & DROP PARA CONEXIONES ---
   const onDragStartInventory = (event, fullNode) => {
     // CAMBIO: Ahora pasamos el nodo COMPLETO (fullNode) para no perder su ID original
     event.dataTransfer.setData('application/reactflow', JSON.stringify(fullNode));
     event.dataTransfer.effectAllowed = 'move';
   };
+
+  // --- GUARDIA DE CONEXIONES (Reglas estrictas) ---
+  const isValidConnectionNetwork = useCallback((connection) => {
+    // Regla 1: No conectar consigo mismo (Bucle)
+    if (connection.source === connection.target) {
+      return false; 
+    }
+
+    // Regla 2: No permitir conexiones duplicadas (sin importar la dirección)
+    const isDuplicate = networkEdges.some(
+      (edge) =>
+        (edge.source === connection.source && edge.target === connection.target) ||
+        (edge.source === connection.target && edge.target === connection.source)
+    );
+
+    return !isDuplicate; // Si no es duplicado, es válido
+  }, [networkEdges]);
 
   const onDragOverNetwork = useCallback((event) => {
     event.preventDefault();
@@ -463,8 +551,17 @@ function IdearbolApp() {
                           <div 
                             key={b._id} 
                             onClick={() => { setActiveBoard(b); setNetworkNodes(b.nodes || []); setNetworkEdges(b.edges || []); }} 
-                            className="bg-[#141923] border border-slate-800 p-6 rounded-xl hover:border-indigo-500/50 cursor-pointer group transition-all"
+                            className="relative bg-[#141923] border border-slate-800 p-6 rounded-xl hover:border-indigo-500/50 cursor-pointer group transition-all"
                           >
+                            {/* Botón de eliminar Pizarra (Aparece al pasar el mouse) */}
+                            <button 
+                              onClick={(e) => handleDeleteBoard(e, b._id)}
+                              className="absolute top-4 right-4 text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-800/50 rounded-md hover:bg-red-500/10"
+                              title="Eliminar pizarra"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+
                             <div className="w-12 h-12 bg-indigo-500/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-indigo-500/20">
                               <Share2 className="text-indigo-400" size={24} />
                             </div>
@@ -482,18 +579,27 @@ function IdearbolApp() {
                   ) : (
                     /* --- SUB-VISTA B: EL LIENZO DE LA PIZARRA ACTIVA --- */
                     <div className="flex-1 flex overflow-hidden relative">
-                      <button 
-                        onClick={() => setActiveBoard(null)} 
-                        className="absolute top-4 right-4 z-[60] bg-slate-800/80 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 backdrop-blur-sm shadow-xl flex items-center gap-2"
-                      >
-                        <ArrowLeft size={14} /> Volver a mis pizarras
-                      </button>
+                      {/* --- BOTONES DE CONTROL DE LA PIZARRA --- */}
+                      <div className="absolute top-4 right-4 z-[60] flex items-center gap-3">
+                        <button 
+                          onClick={handleSaveBoard} 
+                          className="bg-emerald-600/90 hover:bg-emerald-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold border border-emerald-500 backdrop-blur-sm shadow-xl flex items-center gap-2 transition-transform hover:scale-105"
+                        >
+                          <Save size={14} /> Guardar Pizarra
+                        </button>
+                        <button 
+                          onClick={() => setActiveBoard(null)} 
+                          className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 backdrop-blur-sm shadow-xl flex items-center gap-2 transition-colors"
+                        >
+                          <ArrowLeft size={14} /> Volver
+                        </button>
+                      </div>
                       
                       {/* INVENTARIO FILTRADO MÚLTIPLE */}
                       <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 overflow-y-auto z-10 shadow-xl flex flex-col gap-3">
                         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
                         {nodes
-                          .filter(n => activeBoard.linkedProjects.includes(n.data.projectId)) // Filtra los proyectos seleccionados
+                          .filter(n => activeBoard.linkedProjects.some(lp => (lp._id || lp) === n.data.projectId))
                           .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) // El filtro que evita duplicados (¡Tu idea!)
                           .map(n => (
                             <div 
@@ -510,14 +616,21 @@ function IdearbolApp() {
                       </aside>
 
                       {/* REACT FLOW */}
-                      <div className="flex-1">
+                      {/* --- ÁREA DEL LIENZO --- */}
+                      {/* --- ÁREA DEL LIENZO --- */}
+                      <div className="flex-1 relative">
                         <ReactFlow 
                           nodes={networkNodes} 
                           edges={networkEdges} 
                           onNodesChange={onNetworkNodesChange} 
                           onEdgesChange={onNetworkEdgesChange} 
                           onConnect={onConnectNetwork} 
+                          isValidConnection={isValidConnectionNetwork}
                           onEdgeDoubleClick={onEdgeDoubleClick}
+                          onNodeDoubleClick={onNetworkNodeDoubleClick}
+                          onNodeDragStart={onNodeDragStartNetwork} /* <-- NUEVO: Avisa que agarraste un nodo */
+                          onNodeDragStop={onNodeDragStopNetwork}   /* <-- NUEVO: Avisa que soltaste el nodo */
+                          connectionMode={ConnectionMode.Loose}
                           nodeTypes={nodeTypesNetwork} 
                           edgeTypes={edgeTypesNetwork} 
                           onDrop={onDropNetwork} 
@@ -528,6 +641,24 @@ function IdearbolApp() {
                           <Background color="#1e293b" gap={20} />
                           <Controls />
                         </ReactFlow>
+
+                        {/* --- EL BASURERO FLOTANTE ANIMADO --- */}
+                        {isDraggingNode && (
+                          <div 
+                            className={`absolute bottom-8 left-1/2 -translate-x-1/2 w-56 h-16 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 z-[70] ${
+                              isOverTrash 
+                                ? 'bg-red-500 text-white scale-110 shadow-[0_0_40px_rgba(239,68,68,0.6)]' 
+                                : 'bg-[#141923]/90 text-slate-400 border border-slate-700 backdrop-blur-md shadow-2xl'
+                            }`}
+                            onMouseEnter={() => setIsOverTrash(true)}
+                            onMouseLeave={() => setIsOverTrash(false)}
+                          >
+                            <Trash2 size={isOverTrash ? 28 : 22} className={`transition-all ${isOverTrash ? 'animate-bounce' : ''}`} />
+                            <span className="font-bold text-sm tracking-wide">
+                              {isOverTrash ? '¡Suelta para quitar!' : 'Arrastra aquí para quitar'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -602,6 +733,14 @@ function IdearbolApp() {
               <button onClick={handleCreateBoard} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors">Crear Pizarra</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* --- BANNER FLOTANTE (TOAST) --- */}
+      {toastMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[200] bg-emerald-600/95 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-[0_10px_40px_rgba(16,185,129,0.3)] flex items-center gap-3 border border-emerald-400/50 font-medium text-sm transition-all animate-bounce">
+          <Save size={18} />
+          {toastMessage}
         </div>
       )}
 
