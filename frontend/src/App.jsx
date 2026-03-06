@@ -60,7 +60,7 @@ function IdearbolApp() {
 
   useEffect(() => {
     if (currentUser) {
-      fetch(`http://localhost:5000/api/projects/${currentUser._id}`).then(res => res.json()).then(data => {
+      fetch(`https://idearbol.onrender.com/api/projects/${currentUser._id}`).then(res => res.json()).then(data => {
           const formatted = data.map(p => ({ ...p, id: p._id }));
           setProjects(formatted);
           if (formatted.length > 0) { setActiveProjectId(formatted[0].id); setCurrentFolderId('root'); } 
@@ -71,7 +71,7 @@ function IdearbolApp() {
 
   useEffect(() => {
     if (activeProjectId) {
-      fetch(`http://localhost:5000/api/nodes/${activeProjectId}`).then(res => res.json()).then(data => {
+      fetch(`https://idearbol.onrender.com/api/nodes/${activeProjectId}`).then(res => res.json()).then(data => {
           const formattedNodes = data.map(n => ({
             id: n._id, type: 'custom', position: n.position || { x: 100, y: 100 },
             data: { label: n.label, type: n.type, description: n.description, color: n.color, parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas }
@@ -171,19 +171,19 @@ function IdearbolApp() {
   // --- CRUD BASE DE DATOS ---
   const handleSaveProject = async (id, data) => {
     if (id) {
-      const res = await fetch(`http://localhost:5000/api/projects/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const res = await fetch(`https://idearbol.onrender.com/api/projects/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       const updated = await res.json(); updated.id = updated._id;
       setProjects(projects.map(p => p.id === id ? updated : p));
     } else {
       const payload = { ...data, userId: currentUser._id };
-      const res = await fetch(`http://localhost:5000/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await fetch(`https://idearbol.onrender.com/api/projects`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const newProject = await res.json(); newProject.id = newProject._id;
       setProjects([...projects, newProject]); setActiveProjectId(newProject.id); setCurrentFolderId('root');
     }
   };
 
   const handleDeleteProject = async (id) => {
-    await fetch(`http://localhost:5000/api/projects/${id}`, { method: 'DELETE' });
+    await fetch(`https://idearbol.onrender.com/api/projects/${id}`, { method: 'DELETE' });
     const newProjects = projects.filter(p => p.id !== id); setProjects(newProjects);
     if (newProjects.length > 0) { setActiveProjectId(newProjects[0].id); setCurrentFolderId('root'); } else setActiveProjectId(null);
   };
@@ -194,24 +194,24 @@ function IdearbolApp() {
     const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
     const position = { x: projectedCenter.x - 130 + (Math.random() * 40), y: projectedCenter.y - 50 + (Math.random() * 40) };
     const payload = { label: '', type: tipo, description: '', parentId: currentFolderId, projectId: activeProjectId, subIdeas: [], color: tipo === 'grupo' ? '#10b981' : '#3b82f6', position };
-    const res = await fetch(`http://localhost:5000/api/nodes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const dbNode = await res.json();
     const newNode = { id: dbNode._id, type: 'custom', position: dbNode.position, data: { ...dbNode } };
     setNodes((nds) => [...nds, newNode]); setIsFabOpen(false); setSelectedNode(newNode); setIsModalOpen(true);
   };
 
   const handleSaveNode = async (nodeId, newData) => {
-    await fetch(`http://localhost:5000/api/nodes/${nodeId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newData) });
+    await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newData) });
     setNodes((nds) => nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node));
   };
 
   const handleDeleteNode = async (nodeId) => {
-    await fetch(`http://localhost:5000/api/nodes/${nodeId}`, { method: 'DELETE' });
+    await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'DELETE' });
     setNodes((nds) => nds.filter((node) => node.id !== nodeId && node.data.parentId !== nodeId));
   };
 
   const onNodeDragStop = async (event, node) => {
-    await fetch(`http://localhost:5000/api/nodes/${node.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: node.position }) });
+    await fetch(`https://idearbol.onrender.com/api/nodes/${node.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: node.position }) });
   };
 
   const renderTree = (parentId, level) => {

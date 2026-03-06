@@ -45,7 +45,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onLo
         const initials = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
 
         // Petición POST al Backend (Registro)
-        const response = await fetch('http://localhost:5000/api/auth/register', {
+        const response = await fetch('https://idearbol.onrender.com/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, username, email, password, initials })
@@ -68,7 +68,7 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onLo
         }
         
         // Petición POST al Backend (Login)
-        const response = await fetch('http://localhost:5000/api/auth/login', {
+        const response = await fetch('https://idearbol.onrender.com/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password })
