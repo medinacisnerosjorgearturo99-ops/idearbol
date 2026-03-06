@@ -45,6 +45,13 @@ function IdearbolApp() {
   const [networkNodes, setNetworkNodes, onNetworkNodesChange] = useNodesState([]);
   const [networkEdges, setNetworkEdges, onNetworkEdgesChange] = useEdgesState([]);
 
+  const [boards, setBoards] = useState([]); // Lista de todas las pizarras del usuario
+  const [activeBoard, setActiveBoard] = useState(null); // La pizarra que tenemos abierta
+  const [isCreatingBoard, setIsCreatingBoard] = useState(false); // Para mostrar el modal de "Nueva Pizarra"
+  const [newBoardName, setNewBoardName] = useState(""); // Nombre para la nueva pizarra
+  const [selectedProjectIds, setSelectedProjectIds] = useState([]); // Proyectos que vamos a vincular
+  
+
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState(null);
   const [isFabOpen, setIsFabOpen] = useState(false);
@@ -65,6 +72,9 @@ function IdearbolApp() {
           setProjects(formatted);
           if (formatted.length > 0) { setActiveProjectId(formatted[0].id); setCurrentFolderId('root'); } 
           else setActiveProjectId(null);
+          
+          // 👇 ESTA ES LA LÍNEA NUEVA QUE DEBES AGREGAR
+          fetchBoards(currentUser._id);
         }).catch(err => console.error(err));
     } else { setProjects([]); setNodes([]); setActiveProjectId(null); }
   }, [currentUser]);
@@ -113,6 +123,34 @@ function IdearbolApp() {
     setSelectedNode(node); setIsModalOpen(true); 
   };
 
+  const fetchBoards = async (userId) => {
+    try {
+      const res = await fetch(`https://idearbol.onrender.com/api/boards/${userId}`);
+      const data = await res.json();
+      setBoards(data);
+    } catch (err) {
+      console.error("Error cargando pizarras:", err);
+    }
+  };
+
+  const handleCreateBoard = async () => {
+    if (!newBoardName.trim()) return alert("Ponle un nombre a tu pizarra");
+    if (selectedProjectIds.length === 0) return alert("Selecciona al menos un proyecto");
+    
+    const payload = { userId: currentUser._id, name: newBoardName, linkedProjects: selectedProjectIds };
+    try {
+      const res = await fetch(`https://idearbol.onrender.com/api/boards`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      setBoards([...boards, data]); 
+      setActiveBoard(data); 
+      setIsCreatingBoard(false);
+      setNewBoardName("");
+      setNetworkNodes([]); // Limpiamos el lienzo para la nueva pizarra
+      setNetworkEdges([]);
+    } catch (err) { console.error("Error al crear pizarra:", err); }
+  };
 
   // --- LÓGICA DE DRAG & DROP PARA CONEXIONES ---
   const onDragStartInventory = (event, fullNode) => {
@@ -404,54 +442,97 @@ function IdearbolApp() {
 
                 {/* VISTA 3: EL NUEVO LIENZO DE CONEXIONES */}
                 {viewMode === 'connections' && (
-                  <div className="flex h-full w-full">
-                    {/* INVENTARIO IZQUIERDO */}
-                    <div className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 shrink-0 overflow-y-auto z-10 flex flex-col gap-3 shadow-xl">
-                      <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Arrastra al lienzo</h3>
-                      {nodes
-                        .filter(n => n.data.projectId === activeProjectId)
-                        // 👇 EL FILTRO MÁGICO: Si el nodo ya está en el lienzo (networkNodes), lo ocultamos de aquí
-                        .filter(n => !networkNodes.some(netNode => netNode.data.originalId === n.id))
-                        .map(n => (
-                        <div 
-                          key={n.id} 
-                          draggable 
-                          onDragStart={(e) => onDragStartInventory(e, n)} // Pasamos 'n' completo
-                          className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group"
-                        >
-                          <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
-                          {n.data.type === 'grupo' ? <FolderClosed size={16} className="text-emerald-400" /> : <MessageSquare size={16} className="text-indigo-400" />}
-                          <span className="text-sm font-medium text-slate-300 truncate">{n.data.label || 'Sin título'}</span>
+                <div className="h-full flex flex-col bg-[#0B0F17]">
+                  {!activeBoard ? (
+                    /* --- SUB-VISTA A: DASHBOARD DE PIZARRAS --- */
+                    <div className="p-10 max-w-5xl mx-auto w-full overflow-y-auto">
+                      <div className="flex justify-between items-center mb-8">
+                        <div>
+                          <h2 className="text-2xl font-bold text-white">Pizarras de Conexión</h2>
+                          <p className="text-slate-400">Cruza y conecta ideas de varios proyectos</p>
                         </div>
-                      ))}
-                      
-                      {/* Mensaje por si ya arrastró todo */}
-                      {nodes.filter(n => n.data.projectId === activeProjectId && !networkNodes.some(netNode => netNode.data.originalId === n.id)).length === 0 && (
-                        <p className="text-xs text-slate-500 text-center mt-4 italic">Todos los nodos están en el lienzo.</p>
-                      )}
+                        <button 
+                          onClick={() => { setIsCreatingBoard(true); setSelectedProjectIds(activeProjectId ? [activeProjectId] : []); }} 
+                          className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm text-white flex items-center gap-2 transition-colors"
+                        >
+                          <Plus size={18}/> Nueva Pizarra
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {boards.map(b => (
+                          <div 
+                            key={b._id} 
+                            onClick={() => { setActiveBoard(b); setNetworkNodes(b.nodes || []); setNetworkEdges(b.edges || []); }} 
+                            className="bg-[#141923] border border-slate-800 p-6 rounded-xl hover:border-indigo-500/50 cursor-pointer group transition-all"
+                          >
+                            <div className="w-12 h-12 bg-indigo-500/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-indigo-500/20">
+                              <Share2 className="text-indigo-400" size={24} />
+                            </div>
+                            <h3 className="font-bold text-lg text-white mb-1">{b.name}</h3>
+                            <p className="text-xs text-slate-500">{b.linkedProjects?.length || 0} proyectos vinculados</p>
+                          </div>
+                        ))}
+                        {boards.length === 0 && (
+                          <div className="col-span-full text-center py-10 border border-dashed border-slate-800 rounded-xl text-slate-500">
+                            Aún no tienes pizarras. Crea una para empezar a conectar ideas.
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    
-                    {/* LA PIZARRA CONECTORA */}
-                    <div className="flex-1 relative" onDragOver={onDragOverNetwork} onDrop={onDropNetwork}>
-                      <ReactFlow 
-                        nodes={networkNodes} 
-                        edges={networkEdges} 
-                        onNodesChange={onNetworkNodesChange} 
-                        onEdgesChange={onNetworkEdgesChange} 
-                        onConnect={onConnectNetwork}
-                        onEdgeDoubleClick={onEdgeDoubleClick}
-                        nodeTypes={nodeTypesNetwork} 
-                        edgeTypes={edgeTypesNetwork} 
-                        fitView 
-                        className="dark" 
-                        minZoom={0.1} maxZoom={2}
+                  ) : (
+                    /* --- SUB-VISTA B: EL LIENZO DE LA PIZARRA ACTIVA --- */
+                    <div className="flex-1 flex overflow-hidden relative">
+                      <button 
+                        onClick={() => setActiveBoard(null)} 
+                        className="absolute top-4 right-4 z-[60] bg-slate-800/80 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 backdrop-blur-sm shadow-xl flex items-center gap-2"
                       >
-                        <Background color="#1e293b" gap={32} size={2} variant="dots" />
-                        <Controls className="!bg-[#141923] overflow-hidden !border !border-slate-800 shadow-xl !rounded-lg" />
-                      </ReactFlow>
+                        <ArrowLeft size={14} /> Volver a mis pizarras
+                      </button>
+                      
+                      {/* INVENTARIO FILTRADO MÚLTIPLE */}
+                      <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 overflow-y-auto z-10 shadow-xl flex flex-col gap-3">
+                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
+                        {nodes
+                          .filter(n => activeBoard.linkedProjects.includes(n.data.projectId)) // Filtra los proyectos seleccionados
+                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) // El filtro que evita duplicados (¡Tu idea!)
+                          .map(n => (
+                            <div 
+                              key={n.id} 
+                              draggable 
+                              onDragStart={(e) => onDragStartInventory(e, n)} 
+                              className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group"
+                            >
+                              <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
+                              {n.data.type === 'grupo' ? <FolderClosed size={16} className="text-emerald-400" /> : <MessageSquare size={16} className="text-indigo-400" />}
+                              <span className="text-sm font-medium text-slate-300 truncate">{n.data.label || 'Sin título'}</span>
+                            </div>
+                        ))}
+                      </aside>
+
+                      {/* REACT FLOW */}
+                      <div className="flex-1">
+                        <ReactFlow 
+                          nodes={networkNodes} 
+                          edges={networkEdges} 
+                          onNodesChange={onNetworkNodesChange} 
+                          onEdgesChange={onNetworkEdgesChange} 
+                          onConnect={onConnectNetwork} 
+                          onEdgeDoubleClick={onEdgeDoubleClick}
+                          nodeTypes={nodeTypesNetwork} 
+                          edgeTypes={edgeTypesNetwork} 
+                          onDrop={onDropNetwork} 
+                          onDragOver={onDragOverNetwork} 
+                          fitView 
+                          className="dark"
+                        >
+                          <Background color="#1e293b" gap={20} />
+                          <Controls />
+                        </ReactFlow>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
               </div>
 
               {/* BOTÓN FLOTANTE (Solo en Explorador) */}
@@ -476,6 +557,53 @@ function IdearbolApp() {
           )}
         </main>
       </div>
+
+      {/* MODAL NUEVA PIZARRA */}
+      {isCreatingBoard && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+          <div className="bg-[#141923] border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6">
+            <h3 className="text-xl font-bold text-white mb-4">Configurar Nueva Pizarra</h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-400 uppercase mb-1">Nombre de la Pizarra</label>
+                <input 
+                  type="text" 
+                  value={newBoardName} 
+                  onChange={(e) => setNewBoardName(e.target.value)} 
+                  placeholder="Ej: Mapa de Personajes" 
+                  className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-slate-400 uppercase mb-2">Proyectos a Vincular</label>
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
+                  {projects.map(proj => (
+                    <label key={proj.id} className="flex items-center gap-3 p-2 bg-[#0B0F17] rounded-lg cursor-pointer hover:bg-slate-800/50 border border-transparent hover:border-slate-700 transition-colors">
+                      <input 
+                        type="checkbox" 
+                        checked={selectedProjectIds.includes(proj.id)} 
+                        onChange={(e) => {
+                          if(e.target.checked) setSelectedProjectIds([...selectedProjectIds, proj.id]);
+                          else setSelectedProjectIds(selectedProjectIds.filter(id => id !== proj.id));
+                        }} 
+                        className="w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-transparent cursor-pointer" 
+                      />
+                      <span className="text-sm text-slate-300">{proj.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button onClick={() => setIsCreatingBoard(false)} className="flex-1 px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={handleCreateBoard} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors">Crear Pizarra</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NodeEditModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} nodeData={selectedNode} onSave={handleSaveNode} onDelete={handleDeleteNode} />
       <ProjectModal isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)} projectData={projectToEdit} onSave={handleSaveProject} onDelete={handleDeleteProject} />
