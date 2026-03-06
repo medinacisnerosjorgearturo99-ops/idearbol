@@ -3,6 +3,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 const boardRoutes = require('./routes/boardRoutes');
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client("464485765113-hhoskode74d67rfo2g3ncak15hgu4e0l.apps.googleusercontent.com");
 
 const User = require('./models/User');
 const Project = require('./models/Project');
@@ -33,6 +35,45 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(401).json({ message: 'Credenciales incorrectas' });
     res.status(200).json({ message: 'Login exitoso', user });
   } catch (error) { res.status(500).json({ message: 'Error al iniciar sesión', error: error.message }); }
+});
+
+// --- INICIO DE SESIÓN CON GOOGLE ---
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // 1. Desencriptamos el pase VIP con la herramienta de Google
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: "464485765113-hhoskode74d67rfo2g3ncak15hgu4e0l.apps.googleusercontent.com",
+    });
+
+    // 2. Sacamos los datos del usuario (Payload)
+    const payload = ticket.getPayload();
+    const { email, name } = payload;
+
+    // 3. Buscamos si ese correo ya existe en tu Base de Datos
+    let user = await User.findOne({ email });
+
+    // 4. Si no existe, ¡lo registramos automáticamente!
+    if (!user) {
+      user = new User({
+        name: name,
+        email: email,
+        // Le creamos una contraseña aleatoria porque siempre entrará con Google
+        password: Math.random().toString(36).slice(-10), 
+        initials: name.substring(0, 2).toUpperCase()
+      });
+      await user.save();
+    }
+
+    // 5. ¡Le damos acceso!
+    res.status(200).json({ message: 'Login con Google exitoso', user });
+
+  } catch (error) {
+    console.error('Error verificando el token de Google:', error);
+    res.status(401).json({ message: 'Token de Google inválido o expirado' });
+  }
 });
 
 // --- 2. RUTAS DE PROYECTOS ---

@@ -4,6 +4,7 @@ import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, Chevro
   FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2 } from 'lucide-react';
 import ReactFlow, { Background, Controls, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
 import 'reactflow/dist/style.css';
+import { GoogleLogin } from '@react-oauth/google';
 
 import CustomNode from './CustomNode';
 import NetworkNode from './NetworkNode';
@@ -111,6 +112,21 @@ function IdearbolApp() {
   const handleLogout = () => { setCurrentUser(null); setIsUserMenuOpen(false); localStorage.removeItem('idearbol_session'); };
   const openLogin = () => { setAuthMode('login'); setIsAuthModalOpen(true); };
   const openRegister = () => { setAuthMode('register'); setIsAuthModalOpen(true); };
+
+  <div className="mt-4 flex flex-col items-center border-t border-slate-700 pt-4">
+    <p className="text-sm text-slate-400 mb-3">O ingresa con</p>
+    <GoogleLogin
+      onSuccess={credentialResponse => {
+        console.log("¡ÉXITO!", credentialResponse);
+        // Aquí conectaremos con el Backend en el siguiente paso
+      }}
+      onError={() => {
+        console.log('Error al iniciar sesión con Google');
+      }}
+      theme="filled_black"
+      shape="pill"
+    />
+  </div>
 
   // --- LAS FUNCIONES QUE HABÍA BORRADO POR ERROR ---
   const openNewProjectModal = () => { setProjectToEdit(null); setIsProjectModalOpen(true); };

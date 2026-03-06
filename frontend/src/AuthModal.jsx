@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 // Añadimos Loader2 para el icono de "Cargando"
 import { X, Mail, Lock, User, AtSign, AlertCircle, LogIn, UserPlus, Loader2 } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function AuthModal({ isOpen, onClose, initialMode = 'login', onLoginSuccess }) {
   const [mode, setMode] = useState(initialMode);
@@ -163,6 +164,44 @@ export default function AuthModal({ isOpen, onClose, initialMode = 'login', onLo
             {isLoading && <Loader2 size={18} className="animate-spin" />}
             {mode === 'login' ? 'Ingresar a mi cuenta' : 'Comenzar a idear'}
           </button>
+
+          <div className="mt-4 flex flex-col items-center border-t border-slate-700 pt-4">
+            <p className="text-sm text-slate-400 mb-3">O ingresa con</p>
+            <GoogleLogin
+              onSuccess={async (credentialResponse) => {
+                // 1. Agarramos el pase VIP de Google
+                const tokenDeGoogle = credentialResponse.credential;
+                
+                try {
+                  // 2. Lo mandamos a nuestro servidor en el Backend
+                  const res = await fetch('https://idearbol.onrender.com/api/auth/google', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: tokenDeGoogle })
+                  });
+                  
+                  const data = await res.json();
+                  
+                  if (res.ok) {
+                    // 3. ¡Éxito! Iniciamos sesión y cerramos la ventana
+                    onLoginSuccess(data.user);
+                    onClose();
+                  } else {
+                    console.error("Error del servidor:", data.message);
+                    alert("Hubo un problema al iniciar con Google.");
+                  }
+                } catch (error) {
+                  console.error("Error de conexión:", error);
+                }
+              }}
+              onError={() => {
+                console.log('El usuario cerró la ventana o hubo un error con Google');
+              }}
+              type="icon"
+              theme="filled_black"
+              shape="circle"
+            />
+          </div>
         </form>
 
         <div className="p-4 bg-[#0B0F17]/50 border-t border-slate-800 text-center text-sm text-slate-400">
