@@ -37,6 +37,7 @@ function IdearbolApp() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   
   const [nodes, setNodes] = useState([]);
+  const [globalNodes, setGlobalNodes] = useState([]); // <-- NUEVO: Guarda todo para el buscador
   const [currentFolderId, setCurrentFolderId] = useState('root');
   const [viewMode, setViewMode] = useState('canvas'); 
 
@@ -76,10 +77,20 @@ function IdearbolApp() {
           if (formatted.length > 0) { setActiveProjectId(formatted[0].id); setCurrentFolderId('root'); } 
           else setActiveProjectId(null);
           
-          // 👇 ESTA ES LA LÍNEA NUEVA QUE DEBES AGREGAR
           fetchBoards(currentUser._id);
+
+          // 👇 NUEVA LÓGICA: Cargar TODOS los nodos en segundo plano para el buscador
+          Promise.all(formatted.map(p => fetch(`https://idearbol.onrender.com/api/nodes/${p.id}`).then(r => r.json())))
+            .then(results => {
+              const all = results.flat().map(n => ({
+                id: n._id,
+                data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type }
+              }));
+              setGlobalNodes(all);
+            });
+
         }).catch(err => console.error(err));
-    } else { setProjects([]); setNodes([]); setActiveProjectId(null); }
+    } else { setProjects([]); setNodes([]); setActiveProjectId(null); setGlobalNodes([]); }
   }, [currentUser]);
 
   useEffect(() => {
@@ -113,21 +124,6 @@ function IdearbolApp() {
   const openLogin = () => { setAuthMode('login'); setIsAuthModalOpen(true); };
   const openRegister = () => { setAuthMode('register'); setIsAuthModalOpen(true); };
 
-  <div className="mt-4 flex flex-col items-center border-t border-slate-700 pt-4">
-    <p className="text-sm text-slate-400 mb-3">O ingresa con</p>
-    <GoogleLogin
-      onSuccess={credentialResponse => {
-        console.log("¡ÉXITO!", credentialResponse);
-        // Aquí conectaremos con el Backend en el siguiente paso
-      }}
-      onError={() => {
-        console.log('Error al iniciar sesión con Google');
-      }}
-      theme="filled_black"
-      shape="pill"
-    />
-  </div>
-
   // --- LAS FUNCIONES QUE HABÍA BORRADO POR ERROR ---
   const openNewProjectModal = () => { setProjectToEdit(null); setIsProjectModalOpen(true); };
   const openEditProjectModal = (e, project) => { e.stopPropagation(); setProjectToEdit(project); setIsProjectModalOpen(true); };
@@ -137,8 +133,32 @@ function IdearbolApp() {
     else { setSelectedNode(node); setIsModalOpen(true); }
   };
   const handleSearchResultClick = (node) => { 
-    setSearchQuery(''); setActiveProjectId(node.data.projectId); setCurrentFolderId(node.data.parentId); 
-    setSelectedNode(node); setIsModalOpen(true); 
+    setSearchQuery(''); 
+    setActiveProjectId(node.data.projectId); 
+    setCurrentFolderId(node.data.parentId); 
+    setViewMode('canvas'); 
+    
+    // 1. Primero seleccionamos el nodo para que brille
+    setSelectedNode(node); 
+
+    // 2. Le damos tiempo a React Flow para que renderice los nodos del nuevo proyecto
+    setTimeout(() => {
+      // Marcamos el nodo como seleccionado en el estado de React Flow
+      setNodes((nds) => nds.map(n => ({
+        ...n,
+        selected: n.id === node.id 
+      })));
+
+      // 3. ¡LA MAGIA DEL ZOOM! 
+      // Buscamos el nodo real en el lienzo para obtener su posición actual
+      if (fitView) {
+        fitView({
+          nodes: [{ id: node.id }], // Enfócate solo en este nodo
+          duration: 1000,           // Que el movimiento dure 1 segundo (se ve suave)
+          padding: 2,              // Deja un poco de espacio alrededor para que no se pegue a los bordes
+        });
+      }
+    }, 800); // Subimos un poco el tiempo a 800ms para asegurar que el mapa cargó bien
   };
 
   const fetchBoards = async (userId) => {
@@ -393,7 +413,8 @@ function IdearbolApp() {
     return crumbs;
   };
 
-  const searchResults = searchQuery.trim() === '' ? [] : nodes.filter(n => (n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase()) || (n.data.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  // 👇 CAMBIAMOS 'nodes.filter' por 'globalNodes.filter'
+  const searchResults = searchQuery.trim() === '' ? [] : globalNodes.filter(n => (n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase()) || (n.data.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
   const visibleNodes = nodes.filter(node => node.data.projectId === activeProjectId && node.data.parentId === currentFolderId);
 
   return (
@@ -632,7 +653,6 @@ function IdearbolApp() {
                       </aside>
 
                       {/* REACT FLOW */}
-                      {/* --- ÁREA DEL LIENZO --- */}
                       {/* --- ÁREA DEL LIENZO --- */}
                       <div className="flex-1 relative">
                         <ReactFlow 

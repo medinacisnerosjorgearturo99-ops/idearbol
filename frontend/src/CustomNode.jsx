@@ -11,7 +11,7 @@ const hexToRGB = (hex) => {
   return `${r}, ${g}, ${b}`;
 };
 
-export default function CustomNode({ id, data }) {
+export default function CustomNode({ id, data, selected }) {
   const isGroup = data.type === 'grupo';
   const subIdeas = data.subIdeas || [];
   
@@ -32,8 +32,12 @@ export default function CustomNode({ id, data }) {
   };
 
   return (
-    <div className="group bg-[#141923] border border-slate-700/80 rounded-xl shadow-2xl min-w-[260px] max-w-[300px] overflow-hidden transition-all hover:border-slate-500/50 hover:shadow-xl relative cursor-pointer">
-      
+    <div className={`group bg-[#141923] border rounded-xl shadow-2xl min-w-[260px] max-w-[300px] overflow-hidden transition-all duration-500 ${
+      selected 
+        ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.6)] scale-105' 
+        : 'border-slate-700/80 hover:border-slate-500/50'
+    }`}>
+
       {/* MAGIA AQUÍ: El lapicito SOLO se renderiza si isGroup es verdadero */}
       {isGroup && (
         <button 
