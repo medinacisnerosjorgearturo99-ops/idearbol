@@ -14,7 +14,7 @@ import ProjectModal from './ProjectModal';
 import AuthModal from './AuthModal';
 
 const nodeTypesCanvas = { custom: CustomNode };
-const nodeTypesNetwork = { network: NetworkNode };
+const nodeTypesNetwork = { network: CustomNode };
 const edgeTypesNetwork = { gradient: GradientEdge };
 
 const hexToRGB = (hex) => {
@@ -32,6 +32,9 @@ function IdearbolApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
+
+  // --- ESTADO PARA EL MENÚ DE LÍNEAS ---
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -84,7 +87,7 @@ function IdearbolApp() {
             .then(results => {
               const all = results.flat().map(n => ({
                 id: n._id,
-                data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type }
+                data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type, color: n.color }
               }));
               setGlobalNodes(all);
             });
@@ -175,7 +178,7 @@ function IdearbolApp() {
     if (!newBoardName.trim()) return alert("Ponle un nombre a tu pizarra");
     if (selectedProjectIds.length === 0) return alert("Selecciona al menos un proyecto");
     
-    const payload = { userId: currentUser._id, name: newBoardName, linkedProjects: selectedProjectIds };
+    const payload = { userId: currentUser._id, name: newBoardName };
     try {
       const res = await fetch(`https://idearbol.onrender.com/api/boards`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
@@ -304,23 +307,35 @@ function IdearbolApp() {
       id: `net-${fullNode.id}`, // Usamos su ID original para evitar duplicados
       type: 'network',
       position,
-      // CAMBIO CLAVE: Guardamos el 'originalId' para saber quién es quién
-      data: { ...fullNode.data, originalId: fullNode.id }, 
+      // CAMBIO CLAVE: Tomamos el color directamente del fullNode (que es el que tiene la info completa)
+      data: { 
+        ...fullNode.data, 
+        originalId: fullNode.id, 
+        color: fullNode.data?.color || fullNode?.color 
+      }, 
     };
     setNetworkNodes((nds) => nds.concat(newNode));
   }, [project, setNetworkNodes]);
 
   // --- LÓGICA DE CONEXIÓN MÁGICA (GRADIENTE) ---
+  // --- LÓGICA DE CONEXIÓN MÁGICA (GRADIENTE) ---
   const onConnectNetwork = useCallback((params) => {
     const sourceNode = networkNodes.find(n => n.id === params.source);
     const targetNode = networkNodes.find(n => n.id === params.target);
+    console.log("Color del nodo de origen:", sourceNode?.data?.color);
     
     const newEdge = {
       ...params,
       type: 'gradient',
       data: {
-        sourceColor: sourceNode?.data?.type === 'grupo' ? '#10b981' : '#6366f1',
-        targetColor: targetNode?.data?.type === 'grupo' ? '#10b981' : '#6366f1',
+        // 👇 AQUÍ ESTÁ EL ARREGLO: 
+        // Primero intenta usar el color personalizado del nodo (data.color). 
+        // Si no tiene, entonces usa el verde o azul por defecto.
+        sourceColor: sourceNode?.data?.color || (sourceNode?.data?.type === 'grupo' ? '#10b981' : '#6366f1'),
+        targetColor: targetNode?.data?.color || (targetNode?.data?.type === 'grupo' ? '#10b981' : '#6366f1'),
+        
+        // Mantenemos la forma inicial para el menú que acabamos de crear
+        shape: 'bezier' 
       }
     };
     setNetworkEdges((eds) => addEdge(newEdge, eds));
@@ -330,6 +345,29 @@ function IdearbolApp() {
     event.stopPropagation();
     setNetworkEdges((eds) => eds.filter((e) => e.id !== edge.id));
   }, [setNetworkEdges]);
+
+  // Cuando le dan un solo clic a la línea, abrimos el menú
+  const onEdgeClickNetwork = useCallback((event, edge) => {
+    event.stopPropagation(); // Evita que el clic se pase al fondo
+    setSelectedEdgeId(edge.id);
+  }, []);
+
+  // Cuando el usuario toca el fondo negro del lienzo, cerramos el menú
+  const onPaneClickNetwork = useCallback(() => {
+    setSelectedEdgeId(null);
+  }, []);
+
+  // La función que realmente le cambia la forma a la flecha
+  const changeEdgeShape = (newShape) => {
+    setNetworkEdges((eds) => eds.map((edge) => {
+      if (edge.id === selectedEdgeId) {
+        // Le inyectamos la nueva forma en su "data"
+        return { ...edge, data: { ...edge.data, shape: newShape } };
+      }
+      return edge;
+    }));
+    setSelectedEdgeId(null); // Cerramos el menú después de cambiarla
+  };
 
 
   // --- CRUD BASE DE DATOS ---
@@ -635,9 +673,11 @@ function IdearbolApp() {
                       {/* INVENTARIO FILTRADO MÚLTIPLE */}
                       <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 overflow-y-auto z-10 shadow-xl flex flex-col gap-3">
                         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
-                        {nodes
-                          .filter(n => activeBoard.linkedProjects.some(lp => (lp._id || lp) === n.data.projectId))
-                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) // El filtro que evita duplicados (¡Tu idea!)
+                        {globalNodes /* <-- Usamos globalNodes por si acaso, o nodes */
+                          // 👇 ESTA ES LA MAGIA: Filtramos por el proyecto activo en la barra lateral
+                          .filter(n => n.data.projectId === activeProjectId)
+                          // 👇 Mantenemos tu filtro genial antibuplicados
+                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) 
                           .map(n => (
                             <div 
                               key={n.id} 
@@ -663,9 +703,13 @@ function IdearbolApp() {
                           onConnect={onConnectNetwork} 
                           isValidConnection={isValidConnectionNetwork}
                           onEdgeDoubleClick={onEdgeDoubleClick}
+                          
+                          onEdgeClick={onEdgeClickNetwork}
+                          onPaneClick={onPaneClickNetwork}
+                          
                           onNodeDoubleClick={onNetworkNodeDoubleClick}
-                          onNodeDragStart={onNodeDragStartNetwork} /* <-- NUEVO: Avisa que agarraste un nodo */
-                          onNodeDragStop={onNodeDragStopNetwork}   /* <-- NUEVO: Avisa que soltaste el nodo */
+                          onNodeDragStart={onNodeDragStartNetwork}
+                          onNodeDragStop={onNodeDragStopNetwork} 
                           connectionMode={ConnectionMode.Loose}
                           nodeTypes={nodeTypesNetwork} 
                           edgeTypes={edgeTypesNetwork} 
@@ -677,6 +721,16 @@ function IdearbolApp() {
                           <Background color="#1e293b" gap={20} />
                           <Controls />
                         </ReactFlow>
+
+                        {/* --- EL MENÚ FLOTANTE PARA CAMBIAR LA LÍNEA --- */}
+                        {selectedEdgeId && (
+                          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-[#141923]/95 backdrop-blur-md border border-indigo-500/50 p-2 rounded-xl shadow-[0_0_30px_rgba(99,102,241,0.2)] flex gap-2 z-[60] animate-fade-in-up">
+                            <span className="text-xs font-bold text-slate-400 self-center mr-2 ml-2 uppercase tracking-wider">Estilo:</span>
+                            <button onClick={() => changeEdgeShape('bezier')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Curva</button>
+                            <button onClick={() => changeEdgeShape('smoothstep')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Circuito</button>
+                            <button onClick={() => changeEdgeShape('straight')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Recta</button>
+                          </div>
+                        )}
 
                         {/* --- EL BASURERO FLOTANTE ANIMADO --- */}
                         {isDraggingNode && (
@@ -742,28 +796,7 @@ function IdearbolApp() {
                   className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" 
                 />
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 uppercase mb-2">Proyectos a Vincular</label>
-                <div className="max-h-48 overflow-y-auto space-y-2 pr-2">
-                  {projects.map(proj => (
-                    <label key={proj.id} className="flex items-center gap-3 p-2 bg-[#0B0F17] rounded-lg cursor-pointer hover:bg-slate-800/50 border border-transparent hover:border-slate-700 transition-colors">
-                      <input 
-                        type="checkbox" 
-                        checked={selectedProjectIds.includes(proj.id)} 
-                        onChange={(e) => {
-                          if(e.target.checked) setSelectedProjectIds([...selectedProjectIds, proj.id]);
-                          else setSelectedProjectIds(selectedProjectIds.filter(id => id !== proj.id));
-                        }} 
-                        className="w-4 h-4 rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-transparent cursor-pointer" 
-                      />
-                      <span className="text-sm text-slate-300">{proj.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
             </div>
-
             <div className="flex gap-3 mt-8">
               <button onClick={() => setIsCreatingBoard(false)} className="flex-1 px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
               <button onClick={handleCreateBoard} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors">Crear Pizarra</button>

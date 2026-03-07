@@ -1,5 +1,6 @@
 import React from 'react';
 import { Folder, MessageSquare, ListChecks, Edit3 } from 'lucide-react';
+import { Handle, Position } from 'reactflow'; // <-- Herramientas para los puntitos
 
 const hexToRGB = (hex) => {
   let r = 0, g = 0, b = 0;
@@ -11,7 +12,8 @@ const hexToRGB = (hex) => {
   return `${r}, ${g}, ${b}`;
 };
 
-export default function CustomNode({ id, data, selected }) {
+// 👇 Agregamos 'isConnectable' a las propiedades de la función
+export default function CustomNode({ id, data, selected, isConnectable }) {
   const isGroup = data.type === 'grupo';
   const subIdeas = data.subIdeas || [];
   
@@ -37,6 +39,33 @@ export default function CustomNode({ id, data, selected }) {
         ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.6)] scale-105' 
         : 'border-slate-700/80 hover:border-slate-500/50'
     }`}>
+
+      {/* --- LOS 4 PUNTITOS DE CONEXIÓN (HANDLES) --- */}
+      {/* --- LOS 4 PUNTITOS (AHORA CON ! PARA FORZAR QUE SE OCULTEN) --- */}
+      {isConnectable && (
+        <>
+          <Handle 
+            type="source" position={Position.Top} id="top"
+            className="w-3 h-3 border-2 border-[#141923] transition-all duration-300 hover:scale-150 !opacity-0 group-hover:!opacity-100 z-50" 
+            style={{ backgroundColor: activeColor, boxShadow: `0 0 8px ${activeColor}` }} 
+          />
+          <Handle 
+            type="source" position={Position.Bottom} id="bottom"
+            className="w-3 h-3 border-2 border-[#141923] transition-all duration-300 hover:scale-150 !opacity-0 group-hover:!opacity-100 z-50" 
+            style={{ backgroundColor: activeColor, boxShadow: `0 0 8px ${activeColor}` }} 
+          />
+          <Handle 
+            type="source" position={Position.Left} id="left"
+            className="w-3 h-3 border-2 border-[#141923] transition-all duration-300 hover:scale-150 !opacity-0 group-hover:!opacity-100 z-50" 
+            style={{ backgroundColor: activeColor, boxShadow: `0 0 8px ${activeColor}` }} 
+          />
+          <Handle 
+            type="source" position={Position.Right} id="right"
+            className="w-3 h-3 border-2 border-[#141923] transition-all duration-300 hover:scale-150 !opacity-0 group-hover:!opacity-100 z-50" 
+            style={{ backgroundColor: activeColor, boxShadow: `0 0 8px ${activeColor}` }} 
+          />
+        </>
+      )}
 
       {/* MAGIA AQUÍ: El lapicito SOLO se renderiza si isGroup es verdadero */}
       {isGroup && (
@@ -64,7 +93,6 @@ export default function CustomNode({ id, data, selected }) {
         {data.description ? (
           <p className="text-xs text-slate-400 line-clamp-2">{data.description}</p>
         ) : (
-          /* Texto de ayuda dinámico */
           <p className="text-xs text-slate-600 italic">
             {isGroup ? 'Clic en el lápiz para editar...' : 'Doble clic para editar...'}
           </p>

@@ -1,41 +1,62 @@
 import React from 'react';
-import { getBezierPath } from 'reactflow';
+import { BaseEdge, getBezierPath, getStraightPath, getSmoothStepPath } from 'reactflow';
 
 export default function GradientEdge({
-  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  style = {},
+  data,
+  markerEnd,
 }) {
-  // Genera la curva perfecta y flexible
-  const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  // 1. Elegimos qué fórmula matemática usar para dibujar la línea
+  const shape = data?.shape || 'bezier'; 
+  
+  const pathParams = { sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition };
+  let edgePath = '';
 
-  // Recibe los colores dinámicos (o usa los por defecto si fallan)
-  const color1 = data?.sourceColor || '#10b981'; // Esmeralda
-  const color2 = data?.targetColor || '#6366f1'; // Índigo
+  if (shape === 'straight') [edgePath] = getStraightPath(pathParams);
+  else if (shape === 'smoothstep') [edgePath] = getSmoothStepPath(pathParams); // El circuito
+  else [edgePath] = getBezierPath(pathParams); // La curva clásica (por defecto)
+
+  // 2. Colores mágicos
+  const sourceColor = data?.sourceColor || '#6366f1';
+  const targetColor = data?.targetColor || '#cff7e9';
 
   return (
     <>
+      {/* Definimos el degradado de color */}
       <defs>
-        {/* El gradiente que mapea exactamente de la coordenada de inicio a la de fin */}
-        <linearGradient id={`grad-${id}`} gradientUnits="userSpaceOnUse" x1={sourceX} y1={sourceY} x2={targetX} y2={targetY}>
-          <stop offset="0%" stopColor={color1} />
-          <stop offset="100%" stopColor={color2} />
+        <linearGradient id={`gradient-${id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={sourceColor} />
+          <stop offset="100%" stopColor={targetColor} />
         </linearGradient>
-        
-        {/* Filtro para el brillo (Glow) de la línea */}
-        <filter id={`glow-${id}`} x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur stdDeviation="3" result="blur" />
-          <feComposite in="SourceGraphic" in2="blur" operator="over" />
-        </filter>
       </defs>
       
-      {/* La línea renderizada en el lienzo */}
+      {/* La línea brillante */}
+      <BaseEdge
+        path={edgePath}
+        markerEnd={markerEnd}
+        style={{
+          ...style,
+          stroke: `url(#gradient-${id})`,
+          strokeWidth: 4, // El grosor de la línea
+          filter: `drop-shadow(0 0 5px ${sourceColor}80)`, // El brillo de neón
+        }}
+        className="react-flow__edge-path transition-all duration-300"
+      />
+      
+      {/* Una línea invisible más gruesa encima para que sea fácil darle clic */}
       <path
-        id={id}
-        className="react-flow__edge-path"
         d={edgePath}
-        stroke={`url(#grad-${id})`}
-        strokeWidth={2.5}
         fill="none"
-        filter={`url(#glow-${id})`}
+        strokeOpacity={0}
+        strokeWidth={20}
+        className="react-flow__edge-interaction cursor-pointer"
       />
     </>
   );
