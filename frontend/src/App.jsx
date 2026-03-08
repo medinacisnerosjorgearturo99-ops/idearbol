@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+// Agrega useRef aquí 👇
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
   FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon } from 'lucide-react';
@@ -48,6 +49,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
   return memoriaGuardada ? JSON.parse(memoriaGuardada) : {};});
   const [rfInstance, setRfInstance] = useState(null); // Control maestro de la cámara
 
+  const saveViewportTimeout = useRef(null); // 👈 Controla el spam a la base de datos
+
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   
@@ -88,11 +91,23 @@ const [projectViewports, setProjectViewports] = useState(() => {
     if (currentUser) {
       fetch(`https://idearbol.onrender.com/api/projects/${currentUser._id}`)
         .then(res => res.json())
-        .then(async data => { // 👈 Le agregamos async aquí
+        .then(async data => {
           const formatted = data.map(p => ({ ...p, id: p._id }));
           
           if (formatted.length > 0) { 
-            // SI EL USUARIO YA TIENE PROYECTOS, HACEMOS LO NORMAL
+            // 👇 NUEVO: Descargar las cámaras de la nube
+            const viewportsDeLaNube = {};
+            formatted.forEach(p => {
+              if (p.lastViewport && p.lastViewport.zoom) {
+                viewportsDeLaNube[p.id] = p.lastViewport;
+              }
+            });
+            // Si la nube tiene datos, reemplazamos el localStorage
+            if (Object.keys(viewportsDeLaNube).length > 0) {
+              setProjectViewports(viewportsDeLaNube);
+            }
+            // 👆 FIN DE LO NUEVO 
+
             setProjects(formatted);
             setActiveProjectId(formatted[0].id); 
             setCurrentFolderId('root'); 
@@ -145,8 +160,14 @@ const [projectViewports, setProjectViewports] = useState(() => {
     if (activeProjectId) {
       fetch(`https://idearbol.onrender.com/api/nodes/${activeProjectId}`).then(res => res.json()).then(data => {
           const formattedNodes = data.map(n => ({
-            id: n._id, type: 'custom', position: n.position || { x: 100, y: 100 },
-            data: { label: n.label, type: n.type, description: n.description, color: n.color, parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas }
+            id: n._id, 
+            type: n.type === 'image' ? 'image' : 'custom', 
+            position: n.position || { x: 100, y: 100 },
+            
+            // 👇 ESTO OBLIGA A REACT FLOW A RESPETAR EL TAMAÑO GUARDADO 👇
+            style: n.width && n.height ? { width: n.width, height: n.height } : {},
+            
+            data: { ...n } // (Empacamos toda la info aquí)
           }));
           setNodes(formattedNodes);
         }).catch(err => console.error(err));
@@ -383,19 +404,33 @@ const [projectViewports, setProjectViewports] = useState(() => {
 
   // Guarda la posición exacta de la cámara cuando el usuario deja de moverse
   // Guarda la posición exacta en el estado Y en el navegador
+  // Guarda la posición exacta de la cámara cuando el usuario deja de moverse
   const onMoveEnd = useCallback((event, viewport) => {
     if (activeProjectId) {
+      // 1. Guardado instantáneo para que se sienta rápido
       setProjectViewports((prev) => {
-        // Creamos el nuevo mapa de coordenadas
-        const nuevaMemoria = {
-          ...prev,
-          [activeProjectId]: viewport,
-        };
-        // Lo guardamos en el Local Storage (Disco Duro del navegador)
+        const nuevaMemoria = { ...prev, [activeProjectId]: viewport };
         localStorage.setItem('idearbol_camara', JSON.stringify(nuevaMemoria));
-        
         return nuevaMemoria;
       });
+
+      // 2. 🛡️ Guardado silencioso en la Nube (Debounce)
+      // Si el usuario sigue moviendo el mapa, cancelamos el envío anterior
+      if (saveViewportTimeout.current) clearTimeout(saveViewportTimeout.current);
+      
+      // Esperamos 1.5 segundos de inactividad antes de enviarlo a Render
+      saveViewportTimeout.current = setTimeout(async () => {
+        try {
+          await fetch(`https://idearbol.onrender.com/api/projects/${activeProjectId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lastViewport: viewport })
+          });
+          console.log("📸 Toma cinematográfica guardada en la nube");
+        } catch (err) {
+          console.error("Error guardando la cámara:", err);
+        }
+      }, 1500);
     }
   }, [activeProjectId]);
 
@@ -516,9 +551,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
       setIsFabOpen(false); 
       setSelectedNode(newNode); 
       
-      if (tipo !== 'image') {
-        setIsModalOpen(true);
-      }
+      setIsModalOpen(true);
 
     } catch (error) {
       console.error("🚨 Error grave al crear el nodo:", error);

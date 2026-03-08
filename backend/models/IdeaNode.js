@@ -9,6 +9,10 @@ const ideaNodeSchema = new mongoose.Schema({
     default: 'idea' 
   },
   description: { type: String },
+  imageUrl: { type: String, default: '' },
+  caption: { type: String, default: '' },
+  width: { type: Number },
+  height: { type: Number },
   color: { type: String },
   parentId: { type: String, default: 'root' },
   // Relacionamos el nodo con un proyecto específico
