@@ -34,10 +34,12 @@ export default function CustomNode({ id, data, selected, isConnectable }) {
   };
 
   return (
-    <div className={`group bg-[#141923] border rounded-xl shadow-2xl min-w-[260px] max-w-[300px] overflow-hidden transition-all duration-500 ${
-      selected 
-        ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.6)] scale-105' 
-        : 'border-slate-700/80 hover:border-slate-500/50'
+    <div className={`group bg-[#141923] border rounded-xl shadow-2xl min-w-[260px] max-w-[300px] overflow-hidden transition-all duration-500 origin-center ${
+      data.isAbsorbing 
+        ? 'scale-0 opacity-0' /* 👈 SI ESTÁ SIENDO ABSORBIDO, SE ENCOGE Y DESAPARECE */
+        : selected 
+          ? 'border-blue-500 shadow-[0_0_25px_rgba(59,130,246,0.6)] scale-105' 
+          : 'border-slate-700/80 hover:border-slate-500/50'
     }`}>
 
       {/* --- LOS 4 PUNTITOS DE CONEXIÓN (HANDLES) --- */}

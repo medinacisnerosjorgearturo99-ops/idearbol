@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Trash2, Plus, MessageSquare, GripVertical, ChevronLeft, Edit3, Folder } from 'lucide-react';
 
-export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDelete }) {
+export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDelete, projects = [] }) {
   const [viewStack, setViewStack] = useState([]);
   
   const [label, setLabel] = useState('');
@@ -9,6 +9,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   const [subIdeas, setSubIdeas] = useState([]);
   const [newSubIdea, setNewSubIdea] = useState('');
   const [color, setColor] = useState('#3b82f6'); 
+  const [projectId, setProjectId] = useState(''); // 👈 NUEVO: Estado del teletransportador
 
   useEffect(() => {
     if (nodeData && isOpen) {
@@ -16,6 +17,8 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
       setDescription(nodeData.data.description || '');
       setSubIdeas(nodeData.data.subIdeas || []);
       setColor(nodeData.data.color || (nodeData.data.type === 'grupo' ? '#10b981' : '#3b82f6'));
+      // Tratamos de agarrar su proyecto actual, si no, se queda en blanco por defecto
+      setProjectId(nodeData.data.projectId || ''); 
       setViewStack([]);
     }
   }, [nodeData, isOpen]);
@@ -28,7 +31,8 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     const finalLabel = label.trim() === '' ? (isGroup ? 'Nuevo Grupo' : 'Nueva Idea') : label;
 
     if (viewStack.length === 0) {
-      onSave(nodeData.id, { label: finalLabel, description, subIdeas, color });
+      // 👈 NUEVO: Mandamos el projectId en el paquete
+      onSave(nodeData.id, { label: finalLabel, description, subIdeas, color, projectId });
       onClose();
     } else {
       goBack(finalLabel);
@@ -45,7 +49,6 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   };
 
   const enterSubIdea = (ideaToEdit) => {
-    // Guardamos el ID de la idea que estamos editando para no perderla al volver
     setViewStack([...viewStack, { editingId: ideaToEdit.id, label, description, subIdeas, color }]);
     setLabel(ideaToEdit.text);
     setDescription(ideaToEdit.description || '');
@@ -56,7 +59,6 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     const parentState = viewStack[viewStack.length - 1];
     const newStack = viewStack.slice(0, -1);
     
-    // BUGS MATA-IDEAS ARREGLADO: Buscamos por ID exacto, no por texto.
     const updatedParentSubIdeas = parentState.subIdeas.map(item => 
       item.id === parentState.editingId 
         ? { ...item, text: currentLabel, description, subIdeas } 
@@ -101,7 +103,6 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
               <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Escribe el nombre aquí..." className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500" />
             </div>
             
-            {/* NUEVO SELECTOR DE COLOR LIBRE */}
             {viewStack.length === 0 && (
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
@@ -116,6 +117,25 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
               </div>
             )}
           </div>
+
+          {/* 🚀 NUEVO: SELECTOR DE PROYECTO (TELETRANSPORTADOR) 🚀 */}
+          {viewStack.length === 0 && projects.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Ubicación (Proyecto)</label>
+              <select 
+                value={projectId} 
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none"
+              >
+                <option value="" disabled>Selecciona un proyecto...</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name || p.title || 'Proyecto sin nombre'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Detalles / Descripción</label>

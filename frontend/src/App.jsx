@@ -33,8 +33,19 @@ function IdearbolApp() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
 
+  // --- ESTADO PARA EL MODAL DE ABSORCIÓN ---
+  const [confirmDrop, setConfirmDrop] = useState({ isOpen: false, sourceNode: null, targetGroup: null });
+
   // --- ESTADO PARA EL MENÚ DE LÍNEAS ---
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+
+  // --- MEMORIA DE LA CÁMARA (VIEWPORT) ---
+  // --- MEMORIA A LARGO PLAZO DE LA CÁMARA ---
+const [projectViewports, setProjectViewports] = useState(() => {
+  // Al cargar la app, buscamos si hay memoria guardada en el navegador
+  const memoriaGuardada = localStorage.getItem('idearbol_camara');
+  return memoriaGuardada ? JSON.parse(memoriaGuardada) : {};});
+  const [rfInstance, setRfInstance] = useState(null); // Control maestro de la cámara
 
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
@@ -74,26 +85,59 @@ function IdearbolApp() {
 
   useEffect(() => {
     if (currentUser) {
-      fetch(`https://idearbol.onrender.com/api/projects/${currentUser._id}`).then(res => res.json()).then(data => {
+      fetch(`https://idearbol.onrender.com/api/projects/${currentUser._id}`)
+        .then(res => res.json())
+        .then(async data => { // 👈 Le agregamos async aquí
           const formatted = data.map(p => ({ ...p, id: p._id }));
-          setProjects(formatted);
-          if (formatted.length > 0) { setActiveProjectId(formatted[0].id); setCurrentFolderId('root'); } 
-          else setActiveProjectId(null);
           
-          fetchBoards(currentUser._id);
+          if (formatted.length > 0) { 
+            // SI EL USUARIO YA TIENE PROYECTOS, HACEMOS LO NORMAL
+            setProjects(formatted);
+            setActiveProjectId(formatted[0].id); 
+            setCurrentFolderId('root'); 
+            
+            fetchBoards(currentUser._id);
 
-          // 👇 NUEVA LÓGICA: Cargar TODOS los nodos en segundo plano para el buscador
-          Promise.all(formatted.map(p => fetch(`https://idearbol.onrender.com/api/nodes/${p.id}`).then(r => r.json())))
-            .then(results => {
-              const all = results.flat().map(n => ({
-                id: n._id,
-                data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type, color: n.color }
-              }));
-              setGlobalNodes(all);
-            });
+            // Cargar TODOS los nodos en segundo plano para el buscador
+            Promise.all(formatted.map(p => fetch(`https://idearbol.onrender.com/api/nodes/${p.id}`).then(r => r.json())))
+              .then(results => {
+                const all = results.flat().map(n => ({
+                  id: n._id,
+                  data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type, color: n.color }
+                }));
+                setGlobalNodes(all);
+              });
 
+          } else { 
+            // 👇 NUEVA LÓGICA: SI NO TIENE PROYECTOS, LE CREAMOS UNO "GENERAL" 👇
+            try {
+              const res = await fetch('https://idearbol.onrender.com/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  name: 'General', // O 'title', dependiendo de cómo se llame en tu backend
+                  description: 'Bandeja de entrada para todas tus ideas sueltas.',
+                  userId: currentUser._id 
+                })
+              });
+              
+              const newProject = await res.json();
+              const newFormatted = { ...newProject, id: newProject._id };
+              
+              setProjects([newFormatted]);
+              setActiveProjectId(newFormatted.id);
+              setCurrentFolderId('root');
+              setGlobalNodes([]); // Como es nuevo, aún no tiene nodos
+              
+            } catch (error) {
+              console.error("Error al crear el proyecto General:", error);
+            }
+          }
+          
         }).catch(err => console.error(err));
-    } else { setProjects([]); setNodes([]); setActiveProjectId(null); setGlobalNodes([]); }
+    } else { 
+      setProjects([]); setNodes([]); setActiveProjectId(null); setGlobalNodes([]); 
+    }
   }, [currentUser]);
 
   useEffect(() => {
@@ -121,6 +165,25 @@ function IdearbolApp() {
     window.addEventListener('openEditModal', handleOpenEditModal);
     return () => window.removeEventListener('openEditModal', handleOpenEditModal);
   }, [nodes]);
+
+  // Restaura la cámara al cambiar de proyecto (Versión Suave)
+  useEffect(() => {
+    if (rfInstance && activeProjectId) {
+      const savedViewport = projectViewports[activeProjectId];
+      
+      // EL TRUCO: Le damos 50ms a React para que termine de dibujar las nuevas ideas
+      // antes de mover la cámara. Así no se traba la animación.
+      setTimeout(() => {
+        if (savedViewport) {
+          // Vuelo suave hacia donde te quedaste (800ms para que se disfrute el viaje)
+          rfInstance.setViewport(savedViewport, { duration: 800 });
+        } else {
+          // Vuelo suave para centrar todo si es la primera vez
+          rfInstance.fitView({ duration: 800, padding: 0.2 });
+        }
+      }, 50);
+    }
+  }, [activeProjectId, rfInstance]);
 
   const handleLoginSuccess = (user) => { setCurrentUser(user); localStorage.setItem('idearbol_session', JSON.stringify(user)); };
   const handleLogout = () => { setCurrentUser(null); setIsUserMenuOpen(false); localStorage.removeItem('idearbol_session'); };
@@ -317,7 +380,24 @@ function IdearbolApp() {
     setNetworkNodes((nds) => nds.concat(newNode));
   }, [project, setNetworkNodes]);
 
-  // --- LÓGICA DE CONEXIÓN MÁGICA (GRADIENTE) ---
+  // Guarda la posición exacta de la cámara cuando el usuario deja de moverse
+  // Guarda la posición exacta en el estado Y en el navegador
+  const onMoveEnd = useCallback((event, viewport) => {
+    if (activeProjectId) {
+      setProjectViewports((prev) => {
+        // Creamos el nuevo mapa de coordenadas
+        const nuevaMemoria = {
+          ...prev,
+          [activeProjectId]: viewport,
+        };
+        // Lo guardamos en el Local Storage (Disco Duro del navegador)
+        localStorage.setItem('idearbol_camara', JSON.stringify(nuevaMemoria));
+        
+        return nuevaMemoria;
+      });
+    }
+  }, [activeProjectId]);
+
   // --- LÓGICA DE CONEXIÓN MÁGICA (GRADIENTE) ---
   const onConnectNetwork = useCallback((params) => {
     const sourceNode = networkNodes.find(n => n.id === params.source);
@@ -403,17 +483,60 @@ function IdearbolApp() {
   };
 
   const handleSaveNode = async (nodeId, newData) => {
-    await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newData) });
-    setNodes((nds) => nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node));
+    const targetProjectId = newData.projectId || activeProjectId;
+    const dataToSave = { ...newData, projectId: targetProjectId };
+
+    // 1. Lo guardamos en la base de datos
+    await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { 
+      method: 'PUT', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify(dataToSave) 
+    });
+
+    // 2. Actualizamos el Explorador local
+    if (targetProjectId !== activeProjectId) {
+      setNodes((nds) => nds.filter((node) => node.id !== nodeId));
+    } else {
+      setNodes((nds) => nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...dataToSave } } : node));
+    }
+
+    // 3. 🚀 EL FIX MAGICO: Le avisamos al Radar Global del cambio
+    setGlobalNodes((prevGlobal) => prevGlobal.map((gn) => 
+      gn.id === nodeId 
+        ? { ...gn, data: { ...gn.data, ...dataToSave } } 
+        : gn
+    ));
   };
 
   const handleDeleteNode = async (nodeId) => {
     await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'DELETE' });
+    setGlobalNodes((prevGlobal) => prevGlobal.filter(gn => gn.id !== nodeId));
     setNodes((nds) => nds.filter((node) => node.id !== nodeId && node.data.parentId !== nodeId));
+    
   };
 
   const onNodeDragStop = async (event, node) => {
-    await fetch(`https://idearbol.onrender.com/api/nodes/${node.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ position: node.position }) });
+    // 1. Guardamos la posición original en la base de datos
+    await fetch(`https://idearbol.onrender.com/api/nodes/${node.id}`, { 
+      method: 'PUT', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ position: node.position }) 
+    });
+
+    // 2. EL RADAR DE COLISIONES
+    if (rfInstance && node.data.type !== 'grupo') {
+      const nodosChocados = rfInstance.getIntersectingNodes(node);
+      const grupoDestino = nodosChocados.find(n => n.data.type === 'grupo');
+
+      if (grupoDestino) {
+        // En lugar del feo window.confirm, abrimos nuestro modal elegante
+        setConfirmDrop({
+          isOpen: true,
+          sourceNode: node,
+          targetGroup: grupoDestino
+        });
+      }
+    }
   };
 
   const renderTree = (parentId, level) => {
@@ -442,6 +565,42 @@ function IdearbolApp() {
     );
   };
 
+  // Acción al presionar "Cancelar"
+  const cancelDrop = () => {
+    setConfirmDrop({ isOpen: false, sourceNode: null, targetGroup: null });
+  };
+
+  // Acción al presionar "Sí, mover" (Aquí pusimos toda la magia visual)
+  const executeDrop = () => {
+    const { sourceNode, targetGroup } = confirmDrop;
+    
+    // 1. Cerramos el modal
+    setConfirmDrop({ isOpen: false, sourceNode: null, targetGroup: null });
+
+    // 2. Activamos la animación de encogerse
+    setNodes((nds) => nds.map((n) => {
+      if (n.id === sourceNode.id) {
+        return { ...n, data: { ...n.data, isAbsorbing: true } };
+      }
+      return n;
+    }));
+
+    // 3. Esperamos medio segundo y guardamos en la base de datos
+    setTimeout(async () => {
+      try {
+        await fetch(`https://idearbol.onrender.com/api/nodes/${sourceNode.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parentId: targetGroup.id })
+        });
+        // 4. Lo borramos del explorador actual
+        setNodes((nds) => nds.filter(n => n.id !== sourceNode.id));
+      } catch (error) {
+        console.error("Error al absorber la idea:", error);
+      }
+    }, 500);
+  };
+
   const getBreadcrumbs = () => {
     let crumbs = []; let currentId = currentFolderId;
     while (currentId !== 'root') {
@@ -466,7 +625,22 @@ function IdearbolApp() {
         <div className="flex-1 max-w-xl px-4 relative">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Buscar ideas, grupos, proyectos..." className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-1.5 pl-10 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
+            <input
+              type="text"
+              placeholder="Buscar ideas..."
+              value={searchQuery} // (O como se llame tu variable)
+              onChange={(e) => setSearchQuery(e.target.value)}
+              
+              // 👇 EL HECHIZO LIMPIADOR 👇
+              onBlur={() => {
+                setTimeout(() => {
+                  setSearchQuery(''); // Pon aquí tu variable exacta en blanco
+                }, 200); // 200ms es el tiempo perfecto para que no se note, pero no rompa los clics
+              }}
+              // 👆 ---------------------- 👆
+              
+              className="w-full bg-slate-800/50 border border-slate-700 rounded-lg py-1.5 pl-10 pr-4 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+            />
           </div>
           {searchQuery && (
             <div className="absolute top-full mt-2 w-full left-0 bg-[#141923] border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto">
@@ -591,7 +765,22 @@ function IdearbolApp() {
                 
                 {/* VISTA 1: EXPLORADOR */}
                 {viewMode === 'canvas' && (
-                  <ReactFlow nodes={visibleNodes} onNodesChange={onNodesChange} nodeTypes={nodeTypesCanvas} onNodeDoubleClick={onNodeDoubleClick} onNodeDragStop={onNodeDragStop} fitView className="dark" nodesConnectable={false} elementsSelectable={true} minZoom={0.1} maxZoom={1.5}>
+                  <ReactFlow 
+                    nodes={visibleNodes} 
+                    onNodesChange={onNodesChange} 
+                    nodeTypes={nodeTypesCanvas} 
+                    onNodeDoubleClick={onNodeDoubleClick} 
+                    onNodeDragStop={onNodeDragStop} 
+                    fitView 
+                    className="dark" 
+                    nodesConnectable={false} 
+                    elementsSelectable={true} 
+                    minZoom={0.1} 
+                    maxZoom={1.5}
+                    // LAS DOS LÍNEAS NUEVAS VAN AQUÍ 
+                    onInit={setRfInstance}
+                    onMoveEnd={onMoveEnd}
+                  >
                     <Background color="#334155" gap={24} size={2} />
                     <Controls position="top-left" style={{ marginTop: '20px', marginLeft: '20px' }} className="!bg-[#141923] overflow-hidden !border !border-slate-800 shadow-xl !rounded-lg [&>button]:!bg-[#141923] [&>button]:!fill-slate-300 [&>button]:!border-b [&>button]:!border-slate-800 hover:[&>button]:!bg-slate-800 transition-colors" />
                     <MiniMap position="bottom-left" style={{ width: 220, height: 140, marginBottom: '24px', marginLeft: '24px' }} className="!bg-[#141923] !border !border-slate-800 !rounded-xl overflow-hidden shadow-2xl" maskColor="rgba(11, 15, 23, 0.7)" nodeColor={(node) => node.data.type === 'grupo' ? '#10b981' : '#3b82f6'} pannable={true} zoomable={true} />
@@ -813,10 +1002,51 @@ function IdearbolApp() {
         </div>
       )}
 
-      <NodeEditModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} nodeData={selectedNode} onSave={handleSaveNode} onDelete={handleDeleteNode} />
+      <NodeEditModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} nodeData={selectedNode} onSave={handleSaveNode} onDelete={handleDeleteNode} projects={projects} />
       <ProjectModal isOpen={isProjectModalOpen} onClose={() => setIsProjectModalOpen(false)} projectData={projectToEdit} onSave={handleSaveProject} onDelete={handleDeleteProject} />
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} initialMode={authMode} onLoginSuccess={handleLoginSuccess} />
+
+        {/* --- MODAL ELEGANTE DE ABSORCIÓN --- */}
+      {confirmDrop.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-[#0B0F17]/70 backdrop-blur-sm transition-opacity">
+          <div className="bg-[#141923] border border-slate-700 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.6)] p-6 max-w-sm w-full mx-4 transform transition-all">
+            
+            <div className="flex flex-col items-center text-center space-y-4">
+              {/* Icono decorativo */}
+              <div className="w-14 h-14 rounded-full bg-indigo-500/10 flex items-center justify-center border border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.2)]">
+                <FolderClosed className="text-indigo-400" size={28} />
+              </div>
+              
+              {/* Textos */}
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-2">¿Vincular idea?</h3>
+                <p className="text-sm text-slate-400">
+                  ¿Quieres mover <span className="text-slate-200 font-medium tracking-wide">"{confirmDrop.sourceNode?.data?.label || 'esta idea'}"</span> dentro del grupo <span className="text-indigo-400 font-medium tracking-wide">"{confirmDrop.targetGroup?.data?.label}"</span>?
+                </p>
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-3 w-full pt-4 mt-2 border-t border-slate-800">
+                <button 
+                  onClick={cancelDrop}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-300 bg-[#0B0F17] hover:bg-slate-800 border border-slate-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={executeDrop}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-500 shadow-[0_0_15px_rgba(79,70,229,0.4)] hover:shadow-[0_0_25px_rgba(79,70,229,0.6)] transition-all"
+                >
+                  Sí, mover idea
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
     </div>
+
   );
 }
 
