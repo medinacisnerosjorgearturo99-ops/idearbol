@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
-  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2 } from 'lucide-react';
+  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon } from 'lucide-react';
 import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
+import ImageNode from './components/ImageNode';
 
 import CustomNode from './CustomNode';
 import NetworkNode from './NetworkNode';
@@ -13,8 +14,8 @@ import NodeEditModal from './NodeEditModal';
 import ProjectModal from './ProjectModal';
 import AuthModal from './AuthModal';
 
-const nodeTypesCanvas = { custom: CustomNode };
-const nodeTypesNetwork = { network: CustomNode };
+const nodeTypesCanvas = { custom: CustomNode, image: ImageNode };
+const nodeTypesNetwork = { network: CustomNode, image: ImageNode };
 const edgeTypesNetwork = { gradient: GradientEdge };
 
 const hexToRGB = (hex) => {
@@ -471,16 +472,58 @@ const [projectViewports, setProjectViewports] = useState(() => {
   };
 
   const addNode = async (tipo) => {
-    if (!activeProjectId) return;
-    const paneWidth = window.innerWidth - 256; const paneHeight = window.innerHeight - 104;
-    const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
-    const position = { x: projectedCenter.x - 130 + (Math.random() * 40), y: projectedCenter.y - 50 + (Math.random() * 40) };
-    const payload = { label: '', type: tipo, description: '', parentId: currentFolderId, projectId: activeProjectId, subIdeas: [], color: tipo === 'grupo' ? '#10b981' : '#3b82f6', position };
-    const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const dbNode = await res.json();
-    const newNode = { id: dbNode._id, type: 'custom', position: dbNode.position, data: { ...dbNode } };
-    setNodes((nds) => [...nds, newNode]); setIsFabOpen(false); setSelectedNode(newNode); setIsModalOpen(true);
-  };
+    try {
+      if (!activeProjectId) return;
+      const paneWidth = window.innerWidth - 256; 
+      const paneHeight = window.innerHeight - 104;
+      const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
+      const position = { x: projectedCenter.x - 130 + (Math.random() * 40), y: projectedCenter.y - 50 + (Math.random() * 40) };
+      
+      const payload = { 
+        label: '', 
+        type: tipo, 
+        description: '', 
+        parentId: currentFolderId, 
+        projectId: activeProjectId, 
+        subIdeas: [], 
+        color: tipo === 'grupo' ? '#10b981' : tipo === 'image' ? '#ec4899' : '#3b82f6', 
+        position 
+      };
+      
+      const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+      
+      const dbNode = await res.json();
+
+      // 👇 EL DETECTIVE: Si el backend lo rechaza, nos avisa 👇
+      if (!res.ok) {
+        console.error("🚨 El backend rechazó el nodo:", dbNode);
+        alert("¡La base de datos rechazó la imagen! Revisa la consola (F12)");
+        return; // Detenemos todo para que no se rompa la página
+      }
+      
+      const newNode = { 
+        id: dbNode._id, 
+        type: tipo === 'image' ? 'image' : 'custom', 
+        position: dbNode.position, 
+        data: { ...dbNode } 
+      };
+      
+      setNodes((nds) => [...nds, newNode]); 
+      setIsFabOpen(false); 
+      setSelectedNode(newNode); 
+      
+      if (tipo !== 'image') {
+        setIsModalOpen(true);
+      }
+
+    } catch (error) {
+      console.error("🚨 Error grave al crear el nodo:", error);
+    }
+};
 
   const handleSaveNode = async (nodeId, newData) => {
     const targetProjectId = newData.projectId || activeProjectId;
@@ -545,15 +588,32 @@ const [projectViewports, setProjectViewports] = useState(() => {
     return (
       <div className={level > 0 ? "ml-4 pl-5 border-l border-slate-700/60 relative" : "space-y-0.5"}>
         {children.map((node, index) => {
-          const isGroup = node.data.type === 'grupo'; const isActive = selectedNode?.id === node.id; const isLast = index === children.length - 1;
+          const isGroup = node.data.type === 'grupo'; 
+          const isImage = node.type === 'image'; // 👇 1. Detectamos si es una imagen
+          const isActive = selectedNode?.id === node.id; 
+          const isLast = index === children.length - 1;
+          
           return (
             <div key={node.id} className="relative mt-1">
               {level > 0 && <div className="absolute w-5 h-[1px] bg-slate-700/60 -left-5 top-[19px]"></div>}
               {level > 0 && isLast && <div className="absolute w-[3px] h-[calc(100%-19px)] bg-[#0B0F17] -left-[21px] top-[20px]"></div>}
               <div className="flex items-center group w-fit" onClick={() => setSelectedNode(node)}>
                 <div className={`flex items-center gap-3 px-3 py-1.5 rounded-xl cursor-pointer transition-all border ${isActive ? 'bg-indigo-900/30 border-indigo-700/50 shadow-[0_0_15px_rgba(79,70,229,0.1)]' : 'border-transparent hover:bg-slate-800/40'}`}>
-                  {isGroup ? <div className="flex items-center gap-1.5"><ChevronRight size={14} className="text-slate-400" /><Folder size={18} className="text-emerald-500 fill-emerald-500/20" /></div> : <div className="flex items-center gap-1.5 ml-1"><div className="relative w-4 h-4 flex items-center justify-center"><div className="absolute left-0 bottom-0.5 w-1.5 h-1.5 bg-indigo-400 rounded-full" /><div className="absolute right-0 top-0.5 w-2.5 h-2.5 bg-indigo-500 rounded-full" /></div></div>}
-                  <span className={`text-[15px] font-medium tracking-wide ${isActive ? 'text-indigo-100' : 'text-slate-200'}`}>{node.data.label || (isGroup ? 'Nuevo Grupo' : 'Nueva Idea')}</span>
+                  
+                  {/* 👇 2. Le asignamos un icono de foto color rosa/púrpura si es imagen 👇 */}
+                  {isGroup ? (
+                    <div className="flex items-center gap-1.5"><ChevronRight size={14} className="text-slate-400" /><Folder size={18} className="text-emerald-500 fill-emerald-500/20" /></div>
+                  ) : isImage ? (
+                    <div className="flex items-center gap-1.5 ml-1 text-pink-400"><ImageIcon size={16} /></div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 ml-1"><div className="relative w-4 h-4 flex items-center justify-center"><div className="absolute left-0 bottom-0.5 w-1.5 h-1.5 bg-indigo-400 rounded-full" /><div className="absolute right-0 top-0.5 w-2.5 h-2.5 bg-indigo-500 rounded-full" /></div></div>
+                  )}
+                  
+                  {/* 👇 3. Cambiamos el texto por defecto a "Nueva Imagen" 👇 */}
+                  <span className={`text-[15px] font-medium tracking-wide ${isActive ? 'text-indigo-100' : 'text-slate-200'}`}>
+                    {node.data.label || (isGroup ? 'Nuevo Grupo' : isImage ? 'Nueva Imagen' : 'Nueva Idea')}
+                  </span>
+                  
                   <button onClick={(e) => { e.stopPropagation(); setSelectedNode(node); setIsModalOpen(true); }} className="ml-2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-white px-1 transition-opacity"><MoreHorizontal size={16} /></button>
                 </div>
               </div>
@@ -780,10 +840,15 @@ const [projectViewports, setProjectViewports] = useState(() => {
                     // LAS DOS LÍNEAS NUEVAS VAN AQUÍ 
                     onInit={setRfInstance}
                     onMoveEnd={onMoveEnd}
+                    proOptions={{ hideAttribution: true }}
                   >
                     <Background color="#334155" gap={24} size={2} />
                     <Controls position="top-left" style={{ marginTop: '20px', marginLeft: '20px' }} className="!bg-[#141923] overflow-hidden !border !border-slate-800 shadow-xl !rounded-lg [&>button]:!bg-[#141923] [&>button]:!fill-slate-300 [&>button]:!border-b [&>button]:!border-slate-800 hover:[&>button]:!bg-slate-800 transition-colors" />
                     <MiniMap position="bottom-left" style={{ width: 220, height: 140, marginBottom: '24px', marginLeft: '24px' }} className="!bg-[#141923] !border !border-slate-800 !rounded-xl overflow-hidden shadow-2xl" maskColor="rgba(11, 15, 23, 0.7)" nodeColor={(node) => node.data.type === 'grupo' ? '#10b981' : '#3b82f6'} pannable={true} zoomable={true} />
+                    {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
+                    <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-1 mr-2 select-none">
+                      v1.0.0
+                    </Panel>
                   </ReactFlow>
                 )}
 
@@ -911,8 +976,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           <Background color="#1e293b" gap={20} />
                           <Controls />
                           {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
-                          <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-2 mr-2 select-none">
-                            Nodara v1.0.0
+                          <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-1 mr-2 select-none">
+                            v1.0.0
                           </Panel>
                         </ReactFlow>
 
@@ -955,11 +1020,25 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4">
                   {isFabOpen && (
                     <div className="bg-[#141923] border border-slate-700 p-2 rounded-xl shadow-2xl flex flex-col gap-1 w-40">
-                      <button onClick={() => addNode('idea')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-blue-500/20 hover:text-blue-400 rounded-md transition-colors flex items-center gap-2"><MessageSquare size={14} /> Nueva Idea</button>
-                      <button onClick={() => addNode('grupo')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-400 rounded-md transition-colors flex items-center gap-2"><FolderClosed size={14} /> Nuevo Grupo</button>
+                      
+                      <button onClick={() => addNode('idea')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-blue-500/20 hover:text-blue-400 rounded-md transition-colors flex items-center gap-2">
+                        <MessageSquare size={14} /> Nueva Idea
+                      </button>
+                      
+                      <button onClick={() => addNode('grupo')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-emerald-500/20 hover:text-emerald-400 rounded-md transition-colors flex items-center gap-2">
+                        <FolderClosed size={14} /> Nuevo Grupo
+                      </button>
+
+                      {/* 👇 AQUÍ ENTRA EL NUEVO BOTÓN DE IMAGEN 👇 */}
+                      <button onClick={() => addNode('image')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-pink-500/20 hover:text-pink-400 rounded-md transition-colors flex items-center gap-2">
+                        <ImageIcon size={14} /> Nueva Imagen
+                      </button>
+
                     </div>
                   )}
-                  <button onClick={() => setIsFabOpen(!isFabOpen)} className="w-14 h-14 bg-indigo-600 hover:bg-indigo-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)] transition-transform hover:scale-105"><Plus size={32} className={`text-white transition-transform duration-300 ${isFabOpen ? 'rotate-45' : ''}`} /></button>
+                  <button onClick={() => setIsFabOpen(!isFabOpen)} className="w-14 h-14 bg-indigo-600 hover:bg-indigo-500 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(79,70,229,0.4)] transition-transform hover:scale-105">
+                    <Plus size={32} className={`text-white transition-transform duration-300 ${isFabOpen ? 'rotate-45' : ''}`} />
+                  </button>
                 </div>
               )}
             </>

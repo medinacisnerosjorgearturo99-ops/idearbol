@@ -2,7 +2,12 @@ const mongoose = require('mongoose');
 
 const ideaNodeSchema = new mongoose.Schema({
   label: { type: String, default: '' },
-  type: { type: String, enum: ['grupo', 'idea'], required: true },
+  type: { 
+    type: String, 
+    // 👇 Abrimos la puerta a las imágenes, notas y links del futuro 👇
+    enum: ['idea', 'grupo', 'custom', 'image', 'nota', 'link'], 
+    default: 'idea' 
+  },
   description: { type: String },
   color: { type: String },
   parentId: { type: String, default: 'root' },
