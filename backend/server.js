@@ -12,7 +12,8 @@ const IdeaNode = require('./models/IdeaNode');
 
 const app = express();
 app.use(cors({
-  origin: 'https://nodara.vercel.app', // <-- Poner el nuevo link aquí
+  // 👇 Ahora es una lista que permite tu página en vivo Y tu computadora
+  origin: ['https://nodara.vercel.app', 'http://localhost:5173'], 
   credentials: true
 }));
 app.use(express.json());

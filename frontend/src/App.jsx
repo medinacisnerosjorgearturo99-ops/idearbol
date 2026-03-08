@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
   FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2 } from 'lucide-react';
-import ReactFlow, { Background, Controls, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
+import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
 
@@ -906,9 +906,14 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           onDragOver={onDragOverNetwork} 
                           fitView 
                           className="dark"
+                          proOptions={{ hideAttribution: true }}
                         >
                           <Background color="#1e293b" gap={20} />
                           <Controls />
+                          {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
+                          <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-2 mr-2 select-none">
+                            Nodara v1.0.0
+                          </Panel>
                         </ReactFlow>
 
                         {/* --- EL MENÚ FLOTANTE PARA CAMBIAR LA LÍNEA --- */}
