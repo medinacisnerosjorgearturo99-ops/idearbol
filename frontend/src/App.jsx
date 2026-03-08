@@ -619,7 +619,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
       {/* BARRA SUPERIOR */}
       <header className="h-14 border-b border-slate-800 bg-surface flex items-center justify-between px-4 shrink-0 z-50 relative">
         <div onClick={handleGoHome} className="flex items-center gap-2 text-indigo-400 font-bold text-xl cursor-pointer hover:text-indigo-300 transition-colors">
-          <Component size={24} /><span>Ideárbol</span>
+          <Component size={24} /><span>Nodara</span>
         </div>
         
         <div className="flex-1 max-w-xl px-4 relative">

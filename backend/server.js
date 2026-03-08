@@ -11,7 +11,10 @@ const Project = require('./models/Project');
 const IdeaNode = require('./models/IdeaNode');
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'https://nodara.vercel.app/', // <-- Poner el nuevo link aquí
+  credentials: true
+}));
 app.use(express.json());
 app.use('/api/boards', boardRoutes);
 
