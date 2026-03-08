@@ -12,7 +12,7 @@ const IdeaNode = require('./models/IdeaNode');
 
 const app = express();
 app.use(cors({
-  origin: 'https://nodara.vercel.app/', // <-- Poner el nuevo link aquí
+  origin: 'https://nodara.vercel.app', // <-- Poner el nuevo link aquí
   credentials: true
 }));
 app.use(express.json());
