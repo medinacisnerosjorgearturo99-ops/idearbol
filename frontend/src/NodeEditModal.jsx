@@ -1,15 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, Plus, MessageSquare, GripVertical, ChevronLeft, Edit3, Folder } from 'lucide-react';
+import { X, Trash2, Plus, MessageSquare, GripVertical, ChevronLeft, Edit3, Folder, Image as ImageIcon } from 'lucide-react'; // 👈 IMPORTANTE: Añadimos ImageIcon
 
 export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDelete, projects = [] }) {
+  // 1. TODOS LOS HOOKS (USESTATE Y USEEFFECT) VAN AQUÍ ARRIBA, SIN IMPORTAR SI EL MODAL ESTÁ ABIERTO O CERRADO
   const [viewStack, setViewStack] = useState([]);
-  
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [subIdeas, setSubIdeas] = useState([]);
   const [newSubIdea, setNewSubIdea] = useState('');
   const [color, setColor] = useState('#3b82f6'); 
-  const [projectId, setProjectId] = useState(''); // 👈 NUEVO: Estado del teletransportador
+  const [projectId, setProjectId] = useState('');
+
+  // Estados mágicos para la imagen
+  const isImage = nodeData?.type === 'image' || nodeData?.data?.type === 'image';
+  const [imageUrl, setImageUrl] = useState('');
+  const [caption, setCaption] = useState('');
 
   useEffect(() => {
     if (nodeData && isOpen) {
@@ -17,31 +22,34 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
       setDescription(nodeData.data.description || '');
       setSubIdeas(nodeData.data.subIdeas || []);
       setColor(nodeData.data.color || (nodeData.data.type === 'grupo' ? '#10b981' : '#3b82f6'));
-      // Tratamos de agarrar su proyecto actual, si no, se queda en blanco por defecto
       setProjectId(nodeData.data.projectId || ''); 
       setViewStack([]);
+      
+      // Reiniciamos los valores de la imagen cada vez que se abre el modal
+      setImageUrl(nodeData.data.imageUrl || '');
+      setCaption(nodeData.data.caption || '');
     }
   }, [nodeData, isOpen]);
 
+  // 2. AHORA SÍ, EL IF. SI LLEGA HASTA AQUÍ Y ESTÁ CERRADO, SE REGRESA.
   if (!isOpen || !nodeData) return null;
 
+  // 3. FUNCIONES NORMALES (YA NO SON HOOKS)
   const isGroup = nodeData.data.type === 'grupo' && viewStack.length === 0;
 
   const handleSave = () => {
-    // 1. Mejoramos el nombre automático para que reconozca las imágenes
     const defaultLabel = isGroup ? 'Nuevo Grupo' : isImage ? 'Nueva Imagen' : 'Nueva Idea';
     const finalLabel = label.trim() === '' ? defaultLabel : label;
 
     if (viewStack.length === 0) {
-      // 2. ¡Empacamos la imagen y el caption en el paquete!
       onSave(nodeData.id, { 
         label: finalLabel, 
         description, 
         subIdeas, 
         color, 
         projectId,
-        imageUrl, // 👈 Se guarda la foto
-        caption   // 👈 Se guarda el texto
+        imageUrl, 
+        caption   
       });
       onClose();
     } else {
@@ -82,14 +90,6 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     setViewStack(newStack);
   };
 
-  // 1. Detectamos si el nodo actual es una imagen
-  const isImage = nodeData?.type === 'image' || nodeData?.data?.type === 'image';
-  
-  // 2. Creamos los espacios en la memoria del Modal para la foto y el pie de imagen
-  const [imageUrl, setImageUrl] = useState(nodeData?.data?.imageUrl || nodeData?.imageUrl || '');
-  const [caption, setCaption] = useState(nodeData?.data?.caption || nodeData?.caption || '');
-
-  // 3. La magia para leer archivos desde tu computadora
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -99,6 +99,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     }
   };
 
+  // 4. EL RETURN DE HTML (Se mantiene igual que el tuyo)
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-[#141923] border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
