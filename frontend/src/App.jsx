@@ -3,10 +3,11 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
   FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon } from 'lucide-react';
-import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode } from 'reactflow';
+import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode, getNodesBounds, getViewportForBounds } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
 import ImageNode from './components/ImageNode';
+import { toPng } from 'html-to-image';
 
 import CustomNode from './CustomNode';
 import NetworkNode from './NetworkNode';
@@ -291,6 +292,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
     } catch (err) { console.error("Error al crear pizarra:", err); }
   };
 
+  // --- FUNCIÓN PARA GUARDAR LA PIZARRA (La que se había borrado) ---
   const handleSaveBoard = async () => {
     if (!activeBoard) return;
     
@@ -320,6 +322,54 @@ const [projectViewports, setProjectViewports] = useState(() => {
     }
   };
 
+  // --- FUNCIÓN PARA DESCARGAR LA PIZARRA COMO IMAGEN ---
+  const handleDownloadImage = useCallback(() => {
+    if (networkNodes.length === 0) {
+      alert("¡La pizarra está vacía! Agrega ideas primero.");
+      return;
+    }
+
+    const viewportElement = document.querySelector('.react-flow__viewport');
+    
+    if (viewportElement) {
+      const nodesBounds = getNodesBounds(networkNodes);
+      
+      const imageWidth = nodesBounds.width + 100;
+      const imageHeight = nodesBounds.height + 100;
+
+      const viewport = getViewportForBounds(
+        nodesBounds,
+        imageWidth,
+        imageHeight,
+        0.5, 
+        2    
+      );
+
+      toPng(viewportElement, { 
+        backgroundColor: '#0B0F17',
+        width: imageWidth,
+        height: imageHeight,
+        style: {
+          width: imageWidth,
+          height: imageHeight,
+          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+        },
+      })
+      .then((dataUrl) => {
+        const link = document.createElement('a');
+        link.download = `${activeBoard ? activeBoard.name : 'Nodara-Conexiones'}.png`;
+        link.href = dataUrl;
+        link.click();
+        
+        setToastMessage('¡Pizarra exportada a la medida! 📸');
+        setTimeout(() => setToastMessage(null), 3000);
+      })
+      .catch((err) => {
+        console.error('Error al exportar la imagen:', err);
+      });
+    }
+  }, [activeBoard, networkNodes]);
+
   // --- FUNCIÓN PARA ELIMINAR UNA PIZARRA COMPLETA ---
   const handleDeleteBoard = async (event, boardId) => {
     event.stopPropagation(); // Evita que al dar clic al basurero se abra la pizarra
@@ -335,13 +385,19 @@ const [projectViewports, setProjectViewports] = useState(() => {
   };
 
   // --- FUNCIÓN PARA QUITAR UN NODO DEL LIENZO (DOBLE CLIC) ---
+  // --- FUNCIÓN PARA EDITAR UN NODO DESDE EL LIENZO DE CONEXIONES ---
   const onNetworkNodeDoubleClick = useCallback((event, node) => {
     event.stopPropagation();
-    // 1. Quitamos el nodo del lienzo (esto hará que regrese al inventario automáticamente)
-    setNetworkNodes((nds) => nds.filter((n) => n.id !== node.id));
-    // 2. Quitamos cualquier flecha que estuviera conectada a este nodo
-    setNetworkEdges((eds) => eds.filter((e) => e.source !== node.id && e.target !== node.id));
-  }, [setNetworkNodes, setNetworkEdges]);
+    // 1. Recuperamos el ID real (porque en conexiones se llaman "net-1234")
+    const realId = node.data.originalId || node.id;
+    
+    // 2. Buscamos toda la información original de ese nodo
+    const nodeToEdit = globalNodes.find(n => n.id === realId) || { ...node, id: realId };
+    
+    // 3. ¡Abrimos el editor!
+    setSelectedNode(nodeToEdit);
+    setIsModalOpen(true);
+  }, [globalNodes]);
 
   // --- INICIA EL ARRASTRE: Aparece el basurero flotante ---
   const onNodeDragStartNetwork = useCallback((event, node) => {
@@ -523,11 +579,43 @@ const [projectViewports, setProjectViewports] = useState(() => {
   const addNode = async (tipo) => {
     try {
       if (!activeProjectId) return;
-      const paneWidth = window.innerWidth - 256; 
-      const paneHeight = window.innerHeight - 104;
-      const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
-      const position = { x: projectedCenter.x - 130 + (Math.random() * 40), y: projectedCenter.y - 50 + (Math.random() * 40) };
-      
+      const paneWidth = window.innerWidth - 256; // Restamos el menú lateral
+      const paneHeight = window.innerHeight - 104; // Restamos la barra superior
+
+      // 👇 1. MAGIA MATEMÁTICA DE DOBLE CÁMARA 👇
+      let position = { x: 0, y: 0 }; // Para guardar en la Base de Datos (y ver en Explorador)
+      let netPosition = { x: 0, y: 0 }; // Para poner en la Pizarra de Conexiones
+
+      if (viewMode === 'canvas') {
+        // Si estamos en el explorador, la cámara actual funciona perfecto
+        const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
+        position = { 
+          x: projectedCenter.x - 130 + (Math.random() * 40), 
+          y: projectedCenter.y - 50 + (Math.random() * 40) 
+        };
+      } else {
+        // Si estamos en conexiones, usamos la cámara actual solo para la vista de conexiones
+        const netProjected = project({ x: paneWidth / 2, y: paneHeight / 2 });
+        netPosition = { 
+          x: netProjected.x - 130 + (Math.random() * 40), 
+          y: netProjected.y - 50 + (Math.random() * 40) 
+        };
+
+        // Pero para la base de datos, extraemos la memoria guardada de tu cámara del explorador
+        const savedViewport = projectViewports[activeProjectId];
+        if (savedViewport && savedViewport.zoom) {
+          // Fórmula manual para "project()" usando coordenadas guardadas
+          position = {
+            x: ((paneWidth / 2) - savedViewport.x) / savedViewport.zoom - 130 + (Math.random() * 40),
+            y: ((paneHeight / 2) - savedViewport.y) / savedViewport.zoom - 50 + (Math.random() * 40)
+          };
+        } else {
+          // Si nunca había entrado al explorador, lo pone en el origen
+          position = { x: 100 + (Math.random() * 40), y: 100 + (Math.random() * 40) };
+        }
+      }
+      // 👆 FIN DE LA MAGIA 👆
+
       const payload = { 
         label: '', 
         type: tipo, 
@@ -536,7 +624,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
         projectId: activeProjectId, 
         subIdeas: [], 
         color: tipo === 'grupo' ? '#10b981' : tipo === 'image' ? '#ec4899' : '#3b82f6', 
-        position 
+        position // 👈 Guardamos la posición del explorador en la BD
       };
       
       const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { 
@@ -547,11 +635,10 @@ const [projectViewports, setProjectViewports] = useState(() => {
       
       const dbNode = await res.json();
 
-      // 👇 EL DETECTIVE: Si el backend lo rechaza, nos avisa 👇
       if (!res.ok) {
         console.error("🚨 El backend rechazó el nodo:", dbNode);
-        alert("¡La base de datos rechazó la imagen! Revisa la consola (F12)");
-        return; // Detenemos todo para que no se rompa la página
+        alert("¡La base de datos rechazó la creación! Revisa la consola (F12)");
+        return; 
       }
       
       const newNode = { 
@@ -562,15 +649,28 @@ const [projectViewports, setProjectViewports] = useState(() => {
       };
       
       setNodes((nds) => [...nds, newNode]); 
+      setGlobalNodes((prev) => [...prev, newNode]); 
+
+      // Si estamos en Conexiones, ¡lo ponemos en la pizarra oscura de inmediato!
+      if (viewMode === 'connections') {
+        const newNetworkNode = {
+          id: `net-${dbNode._id}`,
+          type: tipo === 'image' ? 'image' : 'network',
+          position: netPosition, // 👈 FIX: Usamos la posición calculada para conexiones
+          style: {},
+          data: { ...dbNode, originalId: dbNode._id }
+        };
+        setNetworkNodes((nds) => [...nds, newNetworkNode]);
+      }
+      
       setIsFabOpen(false); 
       setSelectedNode(newNode); 
-      
       setIsModalOpen(true);
 
     } catch (error) {
       console.error("🚨 Error grave al crear el nodo:", error);
     }
-};
+  };
 
   const handleSaveNode = async (nodeId, newData) => {
     const targetProjectId = newData.projectId || activeProjectId;
@@ -596,13 +696,29 @@ const [projectViewports, setProjectViewports] = useState(() => {
         ? { ...gn, data: { ...gn.data, ...dataToSave } } 
         : gn
     ));
+
+    // 👇 4. NUEVO: Actualizamos la idea directamente en la Pizarra de Conexiones 👇
+    setNetworkNodes((prevNet) => prevNet.map((netNode) => 
+      (netNode.data.originalId === nodeId || netNode.id === nodeId)
+        ? { ...netNode, data: { ...netNode.data, ...dataToSave } } 
+        : netNode
+    ));
   };
 
   const handleDeleteNode = async (nodeId) => {
+    // 1. Lo borramos de la base de datos
     await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'DELETE' });
+    
+    // 2. Lo borramos del Buscador Global
     setGlobalNodes((prevGlobal) => prevGlobal.filter(gn => gn.id !== nodeId));
+    
+    // 3. Lo borramos del Explorador (Vista de carpetas)
     setNodes((nds) => nds.filter((node) => node.id !== nodeId && node.data.parentId !== nodeId));
     
+    // 👇 4. EL FIX: ¡Lo borramos de la Pizarra de Conexiones si estaba ahí! 👇
+    setNetworkNodes((prevNet) => prevNet.filter((netNode) => 
+      netNode.data.originalId !== nodeId && netNode.id !== nodeId
+    ));
   };
 
   const onNodeDragStop = async (event, node) => {
@@ -728,37 +844,27 @@ const [projectViewports, setProjectViewports] = useState(() => {
       const activeTag = document.activeElement.tagName.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea') return;
 
+      // 1.5. EL ESCUDO DE PIZARRAS: No crear nodos si estamos en el lobby de conexiones
+      if (viewMode === 'connections' && !activeBoard) return;
+
       // 2. EVITAR CHOQUES: Ignoramos si están apretando Ctrl, Alt, Shift o la tecla de Windows/Mac
       if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
 
       const key = e.key.toLowerCase();
 
-      // A = Idea (Izquierda)
-      if (key === 'a') {
-        e.preventDefault();
-        addNode('idea');
-      }
-      // S = Grupo (Abajo)
-      if (key === 's') {
-        e.preventDefault();
-        addNode('grupo');
-      }
-      // D = Imagen (Derecha)
-      if (key === 'd') {
-        e.preventDefault();
-        addNode('image');
-      }
-      // W = ¡Reservado para el futuro! (Arriba)
-      if (key === 'w') {
-        e.preventDefault();
-        console.log("La W está reservada para tu próximo tipo de nodo 🚀");
-        // addNode('nota'); // Descomenta esto cuando hagas el nodo de notas
+      if (key === 'a') { e.preventDefault(); addNode('idea'); }
+      if (key === 's') { e.preventDefault(); addNode('grupo'); }
+      if (key === 'd') { e.preventDefault(); addNode('image'); }
+      if (key === 'w') { 
+        e.preventDefault(); 
+        console.log("La W está reservada para tu próximo tipo de nodo 🚀"); 
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeProjectId, currentFolderId]);
+  // 👇 Le avisamos al useEffect que preste atención a viewMode y activeBoard 👇
+  }, [activeProjectId, currentFolderId, viewMode, activeBoard]);
 
   return (
     <div className="flex flex-col h-screen font-sans bg-background">
@@ -933,7 +1039,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                     <MiniMap position="bottom-left" style={{ width: 220, height: 140, marginBottom: '24px', marginLeft: '24px' }} className="!bg-[#141923] !border !border-slate-800 !rounded-xl overflow-hidden shadow-2xl" maskColor="rgba(11, 15, 23, 0.7)" nodeColor={(node) => node.data.type === 'grupo' ? '#10b981' : '#3b82f6'} pannable={true} zoomable={true} />
                     {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
                     <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-1 mr-2 select-none">
-                      v1.0.0
+                      v1.1.0
                     </Panel>
                   </ReactFlow>
                 )}
@@ -1002,6 +1108,15 @@ const [projectViewports, setProjectViewports] = useState(() => {
                         >
                           <Save size={14} /> Guardar Pizarra
                         </button>
+
+                        {/* El botón de Exportar a PNG */}
+                        <button 
+                          onClick={handleDownloadImage} 
+                          className="bg-purple-600/90 hover:bg-purple-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold border border-purple-500 backdrop-blur-sm shadow-xl flex items-center gap-2 transition-transform hover:scale-105"
+                        >
+                          <ImageIcon size={14} /> Exportar PNG
+                        </button>
+
                         <button 
                           onClick={() => setActiveBoard(null)} 
                           className="bg-slate-800/80 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-xs font-medium border border-slate-700 backdrop-blur-sm shadow-xl flex items-center gap-2 transition-colors"
@@ -1077,7 +1192,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           <Controls />
                           {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
                           <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-1 mr-2 select-none">
-                            v1.0.0
+                            v1.1.0
                           </Panel>
                         </ReactFlow>
 
@@ -1116,7 +1231,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
               </div>
 
               {/* BOTÓN FLOTANTE (Solo en Explorador) */}
-              { (viewMode === 'canvas') && (
+              { (viewMode === 'canvas' || (viewMode === 'connections' && activeBoard)) && (
                 <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4">
                   {isFabOpen && (
                     <div className="bg-[#141923] border border-slate-700 p-2 rounded-xl shadow-2xl flex flex-col gap-1 w-40">
