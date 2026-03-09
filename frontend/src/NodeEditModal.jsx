@@ -38,12 +38,15 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   const isGroup = nodeData.data.type === 'grupo' && viewStack.length === 0;
 
   const handleSave = () => {
-    const defaultLabel = isGroup ? 'Nuevo Grupo' : isImage ? 'Nueva Imagen' : 'Nueva Idea';
-    const finalLabel = label.trim() === '' ? defaultLabel : label;
+    // 👇 EL FRENO DE MANO
+    if (label.trim() === '') {
+      alert("¡Ey! El título es obligatorio. Ponle un nombre a tu nodo para no perderte.");
+      return; 
+    }
 
     if (viewStack.length === 0) {
       onSave(nodeData.id, { 
-        label: finalLabel, 
+        label: label.trim(), 
         description, 
         subIdeas, 
         color, 
@@ -53,8 +56,16 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
       });
       onClose();
     } else {
-      goBack(finalLabel);
+      goBack(label.trim());
     }
+  }; // 👈 ¡AQUÍ TERMINA Y SE CIERRA EL HANDLESAVE!
+
+  // 👇 Y JUSTO DEBAJO, LIBRE E INDEPENDIENTE, VA EL HANDLECANCEL 👇
+  const handleCancel = () => {
+    if (!nodeData.data.label || nodeData.data.label.trim() === '') {
+      onDelete(nodeData.id); 
+    }
+    onClose(); 
   };
 
   const deleteSubIdea = (id) => setSubIdeas(subIdeas.filter(idea => idea.id !== id));
@@ -99,6 +110,9 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     }
   };
 
+  // 👇 NUESTRA PALETA DE URGENCIAS/ESTADOS 👇
+  const PRESET_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+  
   // 4. EL RETURN DE HTML (Se mantiene igual que el tuyo)
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
@@ -122,7 +136,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
               {viewStack.length > 0 ? 'Configurando Sub-idea' : isGroup ? 'Configuración del Grupo' : isImage ? 'Editor de Imagen' : 'Editor de Idea'}
             </h2>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
+          <button onClick={handleCancel} className="text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
             <X size={20} />
           </button>
         </div>
@@ -141,9 +155,38 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
             
             {viewStack.length === 0 && (
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
-                <div className="flex bg-[#0B0F17] border border-slate-700 rounded-lg p-1.5 h-[50px] w-[50px] items-center justify-center">
-                  <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0 bg-transparent p-0" />
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color / Estado</label>
+                <div className="flex items-center gap-2 bg-[#0B0F17] border border-slate-700 rounded-lg p-2 h-[50px]">
+                  
+                  {/* LOS BOTONES RÁPIDOS */}
+                  {PRESET_COLORS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setColor(preset)}
+                      className={`w-6 h-6 rounded-full transition-all duration-200 hover:scale-110 ${
+                        color === preset 
+                          ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0B0F17] shadow-[0_0_10px_rgba(255,255,255,0.3)]' 
+                          : 'border border-slate-700 opacity-70 hover:opacity-100'
+                      }`}
+                      style={{ backgroundColor: preset }}
+                      title="Seleccionar color rápido"
+                    />
+                  ))}
+
+                  {/* SEPARADOR VISUAL */}
+                  <div className="w-[1px] h-full bg-slate-700 mx-1"></div>
+
+                  {/* EL SELECTOR LIBRE (RGB) */}
+                  <div className="relative w-6 h-6 rounded-full overflow-hidden border border-slate-700 hover:scale-110 transition-transform" title="Color personalizado">
+                    <input 
+                      type="color" 
+                      value={color} 
+                      onChange={(e) => setColor(e.target.value)} 
+                      className="absolute -top-2 -left-2 w-10 h-10 cursor-pointer border-0 bg-transparent p-0" 
+                    />
+                  </div>
+                  
                 </div>
               </div>
             )}
@@ -237,7 +280,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
           ) : <div></div>}
           
           <div className="flex gap-3">
-            <button onClick={viewStack.length > 0 ? () => goBack(label) : onClose} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">Cancelar</button>
+            <button onClick={viewStack.length > 0 ? () => goBack(label) : handleCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">Cancelar</button>
             <button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-6 py-2 rounded-lg font-medium shadow-lg shadow-indigo-500/20">
               {viewStack.length > 0 ? 'Guardar y Volver' : 'Guardar Cambios'}
             </button>

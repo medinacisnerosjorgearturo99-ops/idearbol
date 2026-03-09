@@ -115,11 +115,21 @@ const [projectViewports, setProjectViewports] = useState(() => {
             fetchBoards(currentUser._id);
 
             // Cargar TODOS los nodos en segundo plano para el buscador
+            // Cargar TODOS los nodos en segundo plano para el buscador
             Promise.all(formatted.map(p => fetch(`https://idearbol.onrender.com/api/nodes/${p.id}`).then(r => r.json())))
               .then(results => {
                 const all = results.flat().map(n => ({
                   id: n._id,
-                  data: { label: n.label, description: n.description, projectId: n.projectId, parentId: n.parentId, type: n.type, color: n.color }
+                  // 👇 1. Le avisamos que es imagen si le toca
+                  type: n.type === 'image' ? 'image' : 'custom',
+                  // 👇 2. Le pasamos el tamaño para que NO salte
+                  style: n.width && n.height ? { width: n.width, height: n.height } : {},
+                  data: { 
+                    label: n.label, description: n.description, projectId: n.projectId, 
+                    parentId: n.parentId, type: n.type, color: n.color,
+                    // 👇 3. Empacamos la foto y el texto
+                    imageUrl: n.imageUrl, caption: n.caption
+                  }
                 }));
                 setGlobalNodes(all);
               });
@@ -163,11 +173,14 @@ const [projectViewports, setProjectViewports] = useState(() => {
             id: n._id, 
             type: n.type === 'image' ? 'image' : 'custom', 
             position: n.position || { x: 100, y: 100 },
-            
-            // 👇 ESTO OBLIGA A REACT FLOW A RESPETAR EL TAMAÑO GUARDADO 👇
+            // 👇 1. El tamaño
             style: n.width && n.height ? { width: n.width, height: n.height } : {},
-            
-            data: { ...n } // (Empacamos toda la info aquí)
+            data: { 
+              label: n.label, type: n.type, description: n.description, color: n.color, 
+              parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas,
+              // 👇 2. La foto y el texto
+              imageUrl: n.imageUrl, caption: n.caption
+            }
           }));
           setNodes(formattedNodes);
         }).catch(err => console.error(err));
@@ -389,10 +402,11 @@ const [projectViewports, setProjectViewports] = useState(() => {
     });
 
     const newNode = {
-      id: `net-${fullNode.id}`, // Usamos su ID original para evitar duplicados
-      type: 'network',
+      id: `net-${fullNode.id}`,
+      type: (fullNode.type === 'image' || fullNode.data?.type === 'image') ? 'image' : 'network',
       position,
-      // CAMBIO CLAVE: Tomamos el color directamente del fullNode (que es el que tiene la info completa)
+      // 👇 AQUÍ ESTÁ EL FIX: Hereda el tamaño exacto
+      style: fullNode.style, 
       data: { 
         ...fullNode.data, 
         originalId: fullNode.id, 
@@ -707,6 +721,45 @@ const [projectViewports, setProjectViewports] = useState(() => {
   const searchResults = searchQuery.trim() === '' ? [] : globalNodes.filter(n => (n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase()) || (n.data.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
   const visibleNodes = nodes.filter(node => node.data.projectId === activeProjectId && node.data.parentId === currentFolderId);
 
+  // --- ATAJOS DE TECLADO GAMER (W, A, S, D) ---
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 1. EL ESCUDO: Si el usuario está escribiendo en un cuadro de texto, lo dejamos en paz
+      const activeTag = document.activeElement.tagName.toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+
+      // 2. EVITAR CHOQUES: Ignoramos si están apretando Ctrl, Alt, Shift o la tecla de Windows/Mac
+      if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+
+      const key = e.key.toLowerCase();
+
+      // A = Idea (Izquierda)
+      if (key === 'a') {
+        e.preventDefault();
+        addNode('idea');
+      }
+      // S = Grupo (Abajo)
+      if (key === 's') {
+        e.preventDefault();
+        addNode('grupo');
+      }
+      // D = Imagen (Derecha)
+      if (key === 'd') {
+        e.preventDefault();
+        addNode('image');
+      }
+      // W = ¡Reservado para el futuro! (Arriba)
+      if (key === 'w') {
+        e.preventDefault();
+        console.log("La W está reservada para tu próximo tipo de nodo 🚀");
+        // addNode('nota'); // Descomenta esto cuando hagas el nodo de notas
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeProjectId, currentFolderId]);
+
   return (
     <div className="flex flex-col h-screen font-sans bg-background">
       {/* BARRA SUPERIOR */}
@@ -960,12 +1013,14 @@ const [projectViewports, setProjectViewports] = useState(() => {
                       {/* INVENTARIO FILTRADO MÚLTIPLE */}
                       <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 overflow-y-auto z-10 shadow-xl flex flex-col gap-3">
                         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
-                        {globalNodes /* <-- Usamos globalNodes por si acaso, o nodes */
-                          // 👇 ESTA ES LA MAGIA: Filtramos por el proyecto activo en la barra lateral
+                        {globalNodes
                           .filter(n => n.data.projectId === activeProjectId)
-                          // 👇 Mantenemos tu filtro genial antibuplicados
                           .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) 
-                          .map(n => (
+                          .map(n => {
+                            // 👇 Detectamos si es imagen para pintar la UI correcta
+                            const isImageNode = n.type === 'image' || n.data?.type === 'image';
+                            
+                            return (
                             <div 
                               key={n.id} 
                               draggable 
@@ -973,10 +1028,22 @@ const [projectViewports, setProjectViewports] = useState(() => {
                               className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group"
                             >
                               <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
-                              {n.data.type === 'grupo' ? <FolderClosed size={16} className="text-emerald-400" /> : <MessageSquare size={16} className="text-indigo-400" />}
-                              <span className="text-sm font-medium text-slate-300 truncate">{n.data.label || 'Sin título'}</span>
+                              
+                              {/* 👇 Icono dinámico 👇 */}
+                              {n.data.type === 'grupo' ? (
+                                <FolderClosed size={16} className="text-emerald-400" />
+                              ) : isImageNode ? (
+                                <ImageIcon size={16} className="text-pink-400" />
+                              ) : (
+                                <MessageSquare size={16} className="text-indigo-400" />
+                              )}
+                              
+                              <span className="text-sm font-medium text-slate-300 truncate">
+                                {/* Si es imagen y no tiene título, que diga "Imagen" en vez de "Sin título" */}
+                                {n.data.label || (isImageNode ? 'Imagen' : 'Sin título')}
+                              </span>
                             </div>
-                        ))}
+                          )})}
                       </aside>
 
                       {/* REACT FLOW */}
