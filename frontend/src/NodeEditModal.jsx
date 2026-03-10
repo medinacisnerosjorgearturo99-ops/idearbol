@@ -42,7 +42,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
 
   const handleSave = () => {
     // 👇 Validación inteligente: Solo exigimos título a las Ideas y Grupos
-    if (!isNote && !isLink && label.trim() === '') {
+    if (!isNote && !isLink && !isImage && label.trim() === '') {
       alert("¡Ey! El título es obligatorio para las ideas y grupos.");
       return; 
     }
@@ -194,11 +194,25 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
                 <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg font-mono text-xs" />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
-                <div className="flex gap-2">
-                  {['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e'].map(c => (
-                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
-                  ))}
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color de la etiqueta</label>
+                <div className="flex items-center gap-4">
+                  {/* Colores predefinidos */}
+                  <div className="flex gap-2">
+                    {['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e'].map(c => (
+                      <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 transition-transform hover:scale-110 ${color === c ? 'border-white scale-110' : 'border-transparent shadow-sm'}`} style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                  
+                  {/* Línea divisoria */}
+                  <div className="w-px h-6 bg-slate-700"></div>
+                  
+                  {/* Selector Libre (RGB) */}
+                  <div className="relative group cursor-pointer">
+                    <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded-full cursor-pointer opacity-0 absolute inset-0 z-10" />
+                    <div className="w-8 h-8 rounded-full border-2 border-slate-600 flex items-center justify-center bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-600 overflow-hidden group-hover:border-slate-400 transition-colors">
+                      <div className="w-full h-full" style={{ backgroundColor: color }}></div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

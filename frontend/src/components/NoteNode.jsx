@@ -1,16 +1,17 @@
 import React from 'react';
 import { Handle, Position, NodeResizer } from 'reactflow';
 
-export default function NoteNode({ data, selected }) {
+// 👇 Agregamos isConnectable aquí 👇
+export default function NoteNode({ data, selected, isConnectable }) {
   const color = data.color || '#fde047'; 
 
   return (
     <>
-      {/* El Resizer controla el tamaño mínimo absoluto (200x200) */}
       <NodeResizer color="#1e293b" isVisible={selected} minWidth={200} minHeight={200} />
       
-      {/* La caja amarilla simplemente ocupa el 100% de lo que le diga el Resizer */}
-      <div className="relative group shadow-md transition-shadow hover:shadow-lg flex flex-col"
+      <div className={`relative group flex flex-col transition-all duration-500 ease-in-out origin-center ${
+             data.isAbsorbing ? 'scale-0 opacity-0 rotate-180' : 'scale-100 opacity-100 shadow-md hover:shadow-lg'
+           }`}
            style={{ 
              width: '100%', height: '100%',
              backgroundColor: color, color: '#1e293b', 
@@ -31,8 +32,18 @@ export default function NoteNode({ data, selected }) {
           {data.description || 'Doble clic para escribir...'}
         </div>
 
-        <Handle type="target" position={Position.Top} className="opacity-0 group-hover:opacity-100" />
-        <Handle type="source" position={Position.Bottom} className="opacity-0 group-hover:opacity-100" />
+        {/* 👇 LOS 4 CONECTORES NEUTROS (Combinan con cualquier color) 👇 */}
+        <Handle type="target" position={Position.Top} id="top" isConnectable={isConnectable}
+          className={`!w-2 !h-2 !bg-slate-800 !border-transparent transition-opacity duration-300 ${isConnectable ? 'opacity-0 group-hover:opacity-100' : '!hidden'}`} />
+        
+        <Handle type="source" position={Position.Right} id="right" isConnectable={isConnectable}
+          className={`!w-2 !h-2 !bg-slate-800 !border-transparent transition-opacity duration-300 ${isConnectable ? 'opacity-0 group-hover:opacity-100' : '!hidden'}`} />
+        
+        <Handle type="source" position={Position.Bottom} id="bottom" isConnectable={isConnectable}
+          className={`!w-2 !h-2 !bg-slate-800 !border-transparent transition-opacity duration-300 ${isConnectable ? 'opacity-0 group-hover:opacity-100' : '!hidden'}`} />
+        
+        <Handle type="target" position={Position.Left} id="left" isConnectable={isConnectable}
+          className={`!w-2 !h-2 !bg-slate-800 !border-transparent transition-opacity duration-300 ${isConnectable ? 'opacity-0 group-hover:opacity-100' : '!hidden'}`} />
       </div>
     </>
   );

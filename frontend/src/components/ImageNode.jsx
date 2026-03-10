@@ -30,10 +30,12 @@ export default memo(function ImageNode({ id, data, selected, isConnectable }) {
       />
 
       {/* --- EL CONTENEDOR PRINCIPAL --- */}
-      {/* Nota la clase 'group' al inicio para detectar el mouse */}
-      <div className={`group w-full h-full flex flex-col relative bg-[#0B0F17]/80 border rounded-xl shadow-xl overflow-hidden backdrop-blur-md select-none ${
-          selected ? 'border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)]' : 'border-slate-800'
-        }`}>
+      {/* 👇 AQUÍ INYECTAMOS LA ANIMACIÓN DEL HOYO NEGRO 👇 */}
+      <div className={`group w-full h-full flex flex-col relative bg-[#0B0F17]/80 border rounded-xl shadow-xl overflow-hidden backdrop-blur-md select-none transition-all duration-500 ease-in-out origin-center ${
+        data.isAbsorbing ? 'scale-0 opacity-0 rotate-180' : 'scale-100 opacity-100'
+      } ${
+        selected ? 'border-pink-500 shadow-[0_0_20px_rgba(236,72,153,0.3)]' : 'border-slate-800'
+      }`}>
         
         {/* 1. LA IMAGEN */}
         {data.imageUrl ? (

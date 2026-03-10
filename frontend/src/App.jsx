@@ -30,7 +30,7 @@ const hexToRGB = (hex) => {
 };
 
 function IdearbolApp() {
-  const { project, fitView } = useReactFlow();
+  const { project, fitView, getViewport } = useReactFlow();
 
   const [currentUser, setCurrentUser] = useState(null); 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -344,7 +344,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
     }
   };
 
-  // --- FUNCIÓN PARA DESCARGAR LA PIZARRA COMO IMAGEN ---
+  // --- FUNCIÓN MEJORADA PARA DESCARGAR LA PIZARRA ---
   const handleDownloadImage = useCallback(() => {
     if (networkNodes.length === 0) {
       alert("¡La pizarra está vacía! Agrega ideas primero.");
@@ -354,10 +354,14 @@ const [projectViewports, setProjectViewports] = useState(() => {
     const viewportElement = document.querySelector('.react-flow__viewport');
     
     if (viewportElement) {
+      // 1. Mostramos un mensaje de que estamos trabajando en ello
+      setToastMessage('Generando imagen, por favor espera... ⏳');
+
       const nodesBounds = getNodesBounds(networkNodes);
       
-      const imageWidth = nodesBounds.width + 100;
-      const imageHeight = nodesBounds.height + 100;
+      // Le damos un poco más de margen para que respire
+      const imageWidth = nodesBounds.width + 200;
+      const imageHeight = nodesBounds.height + 200;
 
       const viewport = getViewportForBounds(
         nodesBounds,
@@ -372,10 +376,13 @@ const [projectViewports, setProjectViewports] = useState(() => {
         width: imageWidth,
         height: imageHeight,
         style: {
-          width: imageWidth,
-          height: imageHeight,
+          width: `${imageWidth}px`, 
+          height: `${imageHeight}px`,
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
         },
+        // 👇 Estos dos parámetros ayudan a que falle menos 👇
+        pixelRatio: 2, 
+        skipFonts: true
       })
       .then((dataUrl) => {
         const link = document.createElement('a');
@@ -387,7 +394,9 @@ const [projectViewports, setProjectViewports] = useState(() => {
         setTimeout(() => setToastMessage(null), 3000);
       })
       .catch((err) => {
-        console.error('Error al exportar la imagen:', err);
+        console.error('🚨 Error al exportar la imagen:', err);
+        setToastMessage('❌ Error de seguridad (CORS) con alguna imagen. Revisa F12.');
+        setTimeout(() => setToastMessage(null), 4000);
       });
     }
   }, [activeBoard, networkNodes]);
@@ -406,7 +415,6 @@ const [projectViewports, setProjectViewports] = useState(() => {
     }
   };
 
-  // --- FUNCIÓN PARA QUITAR UN NODO DEL LIENZO (DOBLE CLIC) ---
   // --- FUNCIÓN PARA EDITAR UN NODO DESDE EL LIENZO DE CONEXIONES ---
   const onNetworkNodeDoubleClick = useCallback((event, node) => {
     event.stopPropagation();
@@ -479,11 +487,15 @@ const [projectViewports, setProjectViewports] = useState(() => {
       y: event.clientY - reactFlowBounds.top,
     });
 
+    // 👇 1. FIX: Le enseñamos a identificar los enlaces y mantener su tipo 👇
+    let netType = 'network';
+    if (fullNode.type === 'image' || fullNode.data?.type === 'image') netType = 'image';
+    if (fullNode.type === 'link' || fullNode.data?.type === 'link') netType = 'link';
+
     const newNode = {
       id: `net-${fullNode.id}`,
-      type: (fullNode.type === 'image' || fullNode.data?.type === 'image') ? 'image' : 'network',
+      type: netType, // Usamos la variable inteligente
       position,
-      // 👇 AQUÍ ESTÁ EL FIX: Hereda el tamaño exacto
       style: fullNode.style, 
       data: { 
         ...fullNode.data, 
@@ -601,160 +613,141 @@ const [projectViewports, setProjectViewports] = useState(() => {
   const addNode = async (tipo) => {
     try {
       if (!activeProjectId) return;
-      const paneWidth = window.innerWidth - 256; // Restamos el menú lateral
-      const paneHeight = window.innerHeight - 104; // Restamos la barra superior
+      const paneWidth = window.innerWidth - 256; 
+      const paneHeight = window.innerHeight - 104; 
 
-      // 👇 1. MAGIA MATEMÁTICA DE DOBLE CÁMARA 👇
-      let position = { x: 0, y: 0 }; // Para guardar en la Base de Datos (y ver en Explorador)
-      let netPosition = { x: 0, y: 0 }; // Para poner en la Pizarra de Conexiones
+      const currentViewport = getViewport();
+      const centerX = ((paneWidth / 2) - currentViewport.x) / currentViewport.zoom;
+      const centerY = ((paneHeight / 2) - currentViewport.y) / currentViewport.zoom;
+
+      // 👇 EL FIX DE LAS NOTAS EXCLUSIVAS 👇
+      // Si estás en la pizarra y creas una nota, la hacemos 100% aislada
+      if (viewMode === 'connections' && tipo === 'nota') {
+        const newBoardNote = {
+          id: `net-nota-${Date.now()}`, // Este ID especial evita que viaje a la BD
+          type: 'nota',
+          position: { x: centerX - 110, y: centerY - 110 },
+          style: { width: 220, height: 220 },
+          data: { label: '', type: 'nota', description: '', color: '#fde047', isBoardSpecific: true }
+        };
+        setNetworkNodes((nds) => [...nds, newBoardNote]);
+        setIsFabOpen(false);
+        setSelectedNode(newBoardNote);
+        setIsModalOpen(true);
+        return; // Detenemos la función aquí para que NO se guarde en el explorador
+      }
+
+      // --- Si NO es una nota de pizarra, sigue el proceso normal hacia la Base de Datos ---
+      let position = { x: 0, y: 0 }; 
+      let netPosition = { x: 0, y: 0 }; 
 
       if (viewMode === 'canvas') {
-        // Si estamos en el explorador, la cámara actual funciona perfecto
-        const projectedCenter = project({ x: paneWidth / 2, y: paneHeight / 2 });
-        position = { 
-          x: projectedCenter.x - 130 + (Math.random() * 40), 
-          y: projectedCenter.y - 50 + (Math.random() * 40) 
-        };
+        position = { x: centerX - 130 + (Math.random() * 40), y: centerY - 50 + (Math.random() * 40) };
       } else {
-        // Si estamos en conexiones, usamos la cámara actual solo para la vista de conexiones
-        const netProjected = project({ x: paneWidth / 2, y: paneHeight / 2 });
-        netPosition = { 
-          x: netProjected.x - 130 + (Math.random() * 40), 
-          y: netProjected.y - 50 + (Math.random() * 40) 
-        };
-
-        // Pero para la base de datos, extraemos la memoria guardada de tu cámara del explorador
+        netPosition = { x: centerX - 130 + (Math.random() * 40), y: centerY - 50 + (Math.random() * 40) };
         const savedViewport = projectViewports[activeProjectId];
         if (savedViewport && savedViewport.zoom) {
-          // Fórmula manual para "project()" usando coordenadas guardadas
           position = {
             x: ((paneWidth / 2) - savedViewport.x) / savedViewport.zoom - 130 + (Math.random() * 40),
             y: ((paneHeight / 2) - savedViewport.y) / savedViewport.zoom - 50 + (Math.random() * 40)
           };
         } else {
-          // Si nunca había entrado al explorador, lo pone en el origen
           position = { x: 100 + (Math.random() * 40), y: 100 + (Math.random() * 40) };
         }
       }
-      // 👆 FIN DE LA MAGIA 👆
 
       const payload = { 
-        label: '', 
-        type: tipo, 
-        description: '', 
-        parentId: currentFolderId, 
-        projectId: activeProjectId, 
-        subIdeas: [], 
-        color: tipo === 'grupo' ? '#10b981' : tipo === 'nota' ? '#fde047' : '#06b6d4', 
-        position,
-        // 👇 ESTA LÍNEA ES EL ESCUDO:
-        isBoardSpecific: viewMode === 'connections' && tipo === 'nota' 
+        label: '', type: tipo, description: '', parentId: currentFolderId, projectId: activeProjectId, subIdeas: [], color: tipo === 'grupo' ? '#10b981' : tipo === 'nota' ? '#fde047' : '#06b6d4', position
       };
       
       const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify(payload) 
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) 
       });
-      
       const dbNode = await res.json();
 
-      if (!res.ok) {
-        console.error("🚨 El backend rechazó el nodo:", dbNode);
-        alert("¡La base de datos rechazó la creación! Revisa la consola (F12)");
-        return; 
-      }
-      
-      // Identificamos el tipo correcto para React Flow
       let reactFlowType = 'custom';
       if (tipo === 'image') reactFlowType = 'image';
       if (tipo === 'nota') reactFlowType = 'nota';
       if (tipo === 'link') reactFlowType = 'link';
 
       const newNode = { 
-        id: dbNode._id, 
-        type: reactFlowType, 
-        position: dbNode.position, 
-        // 👇 EL CANDADO DE TAMAÑO PARA LAS NOTAS 👇
+        id: dbNode._id, type: reactFlowType, position: dbNode.position, 
         style: reactFlowType === 'nota' ? { width: 220, height: 220 } : {}, 
         data: { ...dbNode } 
       };
       
-      if (!payload.isBoardSpecific) {
-        setNodes((nds) => [...nds, newNode]); 
-      } 
+      setNodes((nds) => [...nds, newNode]); 
       setGlobalNodes((prev) => [...prev, newNode]); 
 
-      // Si estamos en Conexiones, lo ponemos en la pizarra oscura
       if (viewMode === 'connections') {
+        // 👇 EL FIX: Traducimos el tipo al idioma de la pizarra ('network') 👇
         let networkType = 'network';
         if (tipo === 'image') networkType = 'image';
         if (tipo === 'nota') networkType = 'nota';
         if (tipo === 'link') networkType = 'link';
 
         const newNetworkNode = {
-          id: `net-${dbNode._id}`,
-          type: networkType,
-          position: netPosition,
-          style: {},
+          id: `net-${dbNode._id}`, 
+          type: networkType, // Usamos la variable traducida aquí
+          position: netPosition, 
+          style: reactFlowType === 'nota' ? { width: 220, height: 220 } : {}, 
           data: { ...dbNode, originalId: dbNode._id }
         };
         setNetworkNodes((nds) => [...nds, newNetworkNode]);
       }
-      
-      setIsFabOpen(false); 
-      setSelectedNode(newNode); 
-      setIsModalOpen(true);
-
+            
+      setIsFabOpen(false); setSelectedNode(newNode); setIsModalOpen(true);
     } catch (error) {
       console.error("🚨 Error grave al crear el nodo:", error);
     }
   };
 
+
   const handleSaveNode = async (nodeId, newData) => {
+    // 👇 ESCUDO: Si es una nota exclusiva de la pizarra, solo se actualiza localmente 👇
+    if (String(nodeId).startsWith('net-nota-')) {
+      setNetworkNodes((prevNet) => prevNet.map((netNode) => 
+        netNode.id === nodeId ? { ...netNode, data: { ...netNode.data, ...newData } } : netNode
+      ));
+      return; 
+    }
+
     const targetProjectId = newData.projectId || activeProjectId;
     const dataToSave = { ...newData, projectId: targetProjectId };
 
-    // 1. Lo guardamos en la base de datos
     await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { 
-      method: 'PUT', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify(dataToSave) 
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(dataToSave) 
     });
 
-    // 2. Actualizamos el Explorador local
     if (targetProjectId !== activeProjectId) {
       setNodes((nds) => nds.filter((node) => node.id !== nodeId));
     } else {
       setNodes((nds) => nds.map((node) => node.id === nodeId ? { ...node, data: { ...node.data, ...dataToSave } } : node));
     }
 
-    // 3. 🚀 EL FIX MAGICO: Le avisamos al Radar Global del cambio
     setGlobalNodes((prevGlobal) => prevGlobal.map((gn) => 
-      gn.id === nodeId 
-        ? { ...gn, data: { ...gn.data, ...dataToSave } } 
-        : gn
+      gn.id === nodeId ? { ...gn, data: { ...gn.data, ...dataToSave } } : gn
     ));
 
-    // 👇 4. NUEVO: Actualizamos la idea directamente en la Pizarra de Conexiones 👇
     setNetworkNodes((prevNet) => prevNet.map((netNode) => 
       (netNode.data.originalId === nodeId || netNode.id === nodeId)
-        ? { ...netNode, data: { ...netNode.data, ...dataToSave } } 
-        : netNode
+        ? { ...netNode, data: { ...netNode.data, ...dataToSave } } : netNode
     ));
   };
 
+
   const handleDeleteNode = async (nodeId) => {
-    // 1. Lo borramos de la base de datos
+    // 👇 ESCUDO: Si es nota exclusiva de la pizarra, se borra solo de ahí 👇
+    if (String(nodeId).startsWith('net-nota-')) {
+      setNetworkNodes((prevNet) => prevNet.filter((netNode) => netNode.id !== nodeId));
+      return;
+    }
+
     await fetch(`https://idearbol.onrender.com/api/nodes/${nodeId}`, { method: 'DELETE' });
     
-    // 2. Lo borramos del Buscador Global
     setGlobalNodes((prevGlobal) => prevGlobal.filter(gn => gn.id !== nodeId));
-    
-    // 3. Lo borramos del Explorador (Vista de carpetas)
     setNodes((nds) => nds.filter((node) => node.id !== nodeId && node.data.parentId !== nodeId));
     
-    // 👇 4. EL FIX: ¡Lo borramos de la Pizarra de Conexiones si estaba ahí! 👇
     setNetworkNodes((prevNet) => prevNet.filter((netNode) => 
       netNode.data.originalId !== nodeId && netNode.id !== nodeId
     ));
@@ -833,6 +826,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
   };
 
   // Acción al presionar "Sí, mover" (Aquí pusimos toda la magia visual)
+  // Acción al presionar "Sí, mover" (Con posicionamiento inteligente)
   const executeDrop = () => {
     const { sourceNode, targetGroup } = confirmDrop;
     
@@ -840,23 +834,50 @@ const [projectViewports, setProjectViewports] = useState(() => {
     setConfirmDrop({ isOpen: false, sourceNode: null, targetGroup: null });
 
     // 2. Activamos la animación de encogerse
-    setNodes((nds) => nds.map((n) => {
-      if (n.id === sourceNode.id) {
-        return { ...n, data: { ...n.data, isAbsorbing: true } };
-      }
-      return n;
-    }));
+    setNodes((nds) => nds.map((n) => 
+      n.id === sourceNode.id ? { ...n, data: { ...n.data, isAbsorbing: true } } : n
+    ));
 
-    // 3. Esperamos medio segundo y guardamos en la base de datos
+    // 3. Esperamos medio segundo para la animación
     setTimeout(async () => {
       try {
+        // 👇 MAGIA MATEMÁTICA: ¿Dónde ponemos la nueva idea? 👇
+        const ideasEnGrupo = nodes.filter(n => n.data.parentId === targetGroup.id);
+        let nuevaPosicion = { x: 0, y: 0 };
+
+        if (ideasEnGrupo.length > 0) {
+          // Si ya hay ideas adentro, buscamos la última y la ponemos justito a un lado
+          const ultimaIdea = ideasEnGrupo[ideasEnGrupo.length - 1];
+          nuevaPosicion = { 
+            x: ultimaIdea.position.x + 40,  // Desfasada a la derecha
+            y: ultimaIdea.position.y + 100  // Desfasada hacia abajo
+          };
+        } else {
+          // Si el grupo está vacío, la ponemos cerca del origen para que el fitView la centre bonito
+          nuevaPosicion = { x: 100, y: 100 }; 
+        }
+
+        // Guardamos la nueva posición y la nueva carpeta en la Base de Datos
         await fetch(`https://idearbol.onrender.com/api/nodes/${sourceNode.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ parentId: targetGroup.id })
+          body: JSON.stringify({ parentId: targetGroup.id, position: nuevaPosicion })
         });
-        // 4. Lo borramos del explorador actual
-        setNodes((nds) => nds.filter(n => n.id !== sourceNode.id));
+        
+        // 4. Actualizamos la memoria del Explorador y ¡le quitamos la selección!
+        setNodes((nds) => nds.map((n) => 
+          n.id === sourceNode.id 
+            ? { ...n, position: nuevaPosicion, selected: false, data: { ...n.data, parentId: targetGroup.id, isAbsorbing: false } }
+            : n
+        ));
+
+        // 5. Le avisamos al Buscador Global
+        setGlobalNodes((prev) => prev.map((n) => 
+          n.id === sourceNode.id 
+            ? { ...n, position: nuevaPosicion, data: { ...n.data, parentId: targetGroup.id } }
+            : n
+        ));
+
       } catch (error) {
         console.error("Error al absorber la idea:", error);
       }
@@ -872,37 +893,56 @@ const [projectViewports, setProjectViewports] = useState(() => {
     return crumbs;
   };
 
-  // 👇 CAMBIAMOS 'nodes.filter' por 'globalNodes.filter'
-  const searchResults = searchQuery.trim() === '' ? [] : globalNodes.filter(n => (n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase()) || (n.data.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  // 👇 1. BÚSQUEDA DIVIDIDA: Buscamos ideas Y buscamos pizarras 👇
+  const searchResultsNodes = searchQuery.trim() === '' ? [] : globalNodes.filter(n => (n.data.label || '').toLowerCase().includes(searchQuery.toLowerCase()) || (n.data.description || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  
+  const searchResultsBoards = searchQuery.trim() === '' ? [] : boards.filter(b => (b.name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
+  // 👇 2. NUEVA FUNCIÓN: Qué hacer cuando le das clic a una pizarra en el buscador 👇
+  const handleBoardSearchResultClick = (board) => {
+    setSearchQuery('');           // Limpiamos el buscador
+    setViewMode('connections');   // Cambiamos a la vista de conexiones
+    setActiveBoard(board);        // Abrimos la pizarra que elegiste
+    setNetworkNodes(board.nodes || []); // Cargamos sus nodos
+    setNetworkEdges(board.edges || []); // Cargamos sus flechas
+  };
   const visibleNodes = nodes.filter(node => node.data.projectId === activeProjectId && node.data.parentId === currentFolderId);
 
-  // --- ATAJOS DE TECLADO GAMER (W, A, S, D) ---
+  // 🧠 1. EL PUENTE DE MEMORIA (Para que el teclado siempre tenga datos en vivo)
+  const addNodeRef = useRef(addNode);
+  useEffect(() => {
+    addNodeRef.current = addNode;
+  });
+
+  // ⌨️ 2. LOS ATAJOS DE TECLADO (Usando el puente)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // 1. EL ESCUDO DEFINITIVO: Si el modal está abierto, o si estás escribiendo, ignoramos el teclado
+      // El escudo de siempre
       const activeTag = document.activeElement.tagName.toLowerCase();
       if (isModalOpen || activeTag === 'input' || activeTag === 'textarea') return;
-
-      // 1.5. EL ESCUDO DE PIZARRAS: No crear nodos si estamos en el lobby de conexiones
       if (viewMode === 'connections' && !activeBoard) return;
-
-      // 2. EVITAR CHOQUES: Ignoramos si están apretando Ctrl, Alt, Shift o la tecla de Windows/Mac
       if (e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
 
       const key = e.key.toLowerCase();
 
-      if (key === 'a') { e.preventDefault(); addNode('idea'); }
-      if (key === 's') { e.preventDefault(); addNode('grupo'); }
-      if (key === 'd') { e.preventDefault(); addNode('image'); }
-      if (key === 'w') { e.preventDefault(); addNode('nota'); }
-      if (key === 'e') { e.preventDefault(); addNode('link'); }
+      // ¡Aquí está la magia! Usamos addNodeRef.current en lugar de addNode directo
+      if (key === 'a') { e.preventDefault(); addNodeRef.current('idea'); }
+      if (key === 's') { e.preventDefault(); addNodeRef.current('grupo'); }
+      if (key === 'd') { e.preventDefault(); addNodeRef.current('image'); }
+      if (key === 'w') { e.preventDefault(); addNodeRef.current('nota'); }
+      if (key === 'e') { e.preventDefault(); addNodeRef.current('link'); }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
     
-  // 👇 Le avisamos al useEffect que preste atención a isModalOpen 👇
-  }, [activeProjectId, currentFolderId, viewMode, activeBoard, isModalOpen]);
+  // Ya no necesitamos poner un montón de dependencias aquí porque usamos el puente
+  }, [viewMode, activeBoard, isModalOpen]);
+
+  // 🧹 ESCUDO ANTI-FANTASMAS: Limpia las selecciones al entrar o salir de una carpeta
+  useEffect(() => {
+    setNodes(nds => nds.map(n => ({ ...n, selected: false })));
+  }, [currentFolderId]);
 
   return (
     <div className="flex flex-col h-screen font-sans bg-background">
@@ -933,23 +973,50 @@ const [projectViewports, setProjectViewports] = useState(() => {
             />
           </div>
           {searchQuery && (
-            <div className="absolute top-full mt-2 w-full left-0 bg-[#141923] border border-slate-700 rounded-xl shadow-2xl overflow-hidden z-50 max-h-96 overflow-y-auto">
-              {searchResults.length > 0 ? (
-                <div className="p-2 space-y-1">
-                  <div className="text-xs font-semibold text-slate-500 uppercase px-2 py-1">Resultados</div>
-                  {searchResults.map(result => {
-                    const isGroup = result.data.type === 'grupo';
-                    const projName = projects.find(p => p.id === result.data.projectId)?.name || 'Desconocido';
-                    return (
-                      <button key={result.id} onClick={() => handleSearchResultClick(result)} className="w-full text-left flex flex-col p-2 hover:bg-slate-800 rounded-lg transition-colors">
-                        <div className="flex items-center gap-2 text-sm text-slate-200 font-medium">
-                          {isGroup ? <FolderClosed size={14} className="text-emerald-400"/> : <MessageSquare size={14} className="text-blue-400"/>}
-                          {result.data.label}
-                        </div>
-                        <div className="text-xs text-slate-500 ml-6 flex items-center gap-1">En proyecto: <span className="text-slate-400">{projName}</span></div>
-                      </button>
-                    )
-                  })}
+            <div 
+              className="absolute top-full mt-2 w-full left-0 bg-[#141923] border border-slate-700 rounded-xl shadow-2xl z-50 max-h-96 overflow-y-auto scroll-elegante"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}
+            >
+              {(searchResultsNodes.length > 0 || searchResultsBoards.length > 0) ? (
+                <div className="p-2 space-y-3">
+                  
+                  {/* --- SECCIÓN 1: RESULTADOS DE PIZARRAS --- */}
+                  {searchResultsBoards.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase px-2 py-1 tracking-wider mb-1">Pizarras de Conexión</div>
+                      {searchResultsBoards.map(board => (
+                        <button key={board._id} onClick={() => handleBoardSearchResultClick(board)} className="w-full text-left flex items-center gap-3 p-2 hover:bg-slate-800 rounded-lg transition-colors group">
+                          <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0 border border-indigo-500/20 group-hover:bg-indigo-500/20">
+                            <Network size={16} className="text-indigo-400" />
+                          </div>
+                          <div>
+                            <div className="text-sm text-slate-200 font-medium group-hover:text-white transition-colors">{board.name}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* --- SECCIÓN 2: RESULTADOS DE IDEAS --- */}
+                  {searchResultsNodes.length > 0 && (
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-500 uppercase px-2 py-1 tracking-wider mb-1">Ideas y Grupos</div>
+                      {searchResultsNodes.map(result => {
+                        const isGroup = result.data.type === 'grupo';
+                        const projName = projects.find(p => p.id === result.data.projectId)?.name || 'Desconocido';
+                        return (
+                          <button key={result.id} onClick={() => handleSearchResultClick(result)} className="w-full text-left flex flex-col p-2 hover:bg-slate-800 rounded-lg transition-colors group">
+                            <div className="flex items-center gap-2 text-sm text-slate-200 font-medium group-hover:text-white transition-colors">
+                              {isGroup ? <FolderClosed size={14} className="text-emerald-400"/> : <MessageSquare size={14} className="text-blue-400"/>}
+                              {result.data.label || 'Sin título'}
+                            </div>
+                            <div className="text-xs text-slate-500 ml-6 flex items-center gap-1">En proyecto: <span className="text-slate-400">{projName}</span></div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  
                 </div>
               ) : (
                 <div className="p-4 text-center text-sm text-slate-500">No se encontraron resultados para "{searchQuery}"</div>
@@ -1164,40 +1231,69 @@ const [projectViewports, setProjectViewports] = useState(() => {
                       </div>
                       
                       {/* INVENTARIO FILTRADO MÚLTIPLE */}
-                      <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 p-4 overflow-y-auto z-10 shadow-xl flex flex-col gap-3">
-                        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
-                        {globalNodes
-                          .filter(n => n.data.projectId === activeProjectId)
-                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id))
-                          .filter(n => n.type !== 'nota' && n.data?.type !== 'nota') // 👈 EL ESCUDO ANTI-NOTAS EN EL INVENTARIO
-                          .map(n => {
-                            // 👇 Detectamos si es imagen para pintar la UI correcta
-                            const isImageNode = n.type === 'image' || n.data?.type === 'image';
+                      <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 flex flex-col z-10 shadow-xl shrink-0 h-full overflow-hidden relative">
+                        
+                        {/* 👇 EL HECHIZO PARA EMBELLECER LA BARRA EN CHROME/EDGE 👇 */}
+                        <style>{`
+                          .scroll-elegante::-webkit-scrollbar { width: 6px; }
+                          .scroll-elegante::-webkit-scrollbar-track { background: transparent; }
+                          .scroll-elegante::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 20px; }
+                          .scroll-elegante::-webkit-scrollbar-thumb:hover { background-color: #4f46e5; }
+                        `}</style>
+
+                        {/* Cabecera Fija */}
+                        <div className="p-4 border-b border-slate-800/80 shrink-0 bg-[#0B0F17] z-20">
+                          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Elementos Disponibles</h3>
+                        </div>
+                        
+                        <div className="relative flex-1 min-h-0">
+                          {/* 👇 Le agregamos la clase "scroll-elegante" al div 👇 */}
+                          <div className="absolute inset-0 overflow-y-auto p-4 space-y-3 pb-8 scroll-elegante" 
+                               style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                             
-                            return (
-                            <div 
-                              key={n.id} 
-                              draggable 
-                              onDragStart={(e) => onDragStartInventory(e, n)} 
-                              className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group"
-                            >
-                              <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400" />
+                            {globalNodes
+                              .filter(n => n.data.projectId === activeProjectId)
+                              .filter(n => !networkNodes.some(net => net.data.originalId === n.id))
+                              .filter(n => n.type !== 'nota' && n.data?.type !== 'nota')
+                              .map(n => {
+                                const isImageNode = n.type === 'image' || n.data?.type === 'image';
+                                const isLinkNode = n.type === 'link' || n.data?.type === 'link';
+                                
+                                return (
+                                <div 
+                                  key={n.id} 
+                                  draggable 
+                                  onDragStart={(e) => onDragStartInventory(e, n)} 
+                                  className="flex items-center gap-3 p-3 bg-[#141923] border border-slate-700/50 hover:border-slate-500 rounded-lg cursor-grab active:cursor-grabbing transition-colors group shrink-0"
+                                >
+                                  <GripVertical size={16} className="text-slate-600 group-hover:text-slate-400 shrink-0" />
+                                  
+                                  {/* Iconos */}
+                                  {n.data.type === 'grupo' ? (
+                                    <FolderClosed size={16} className="text-emerald-400 shrink-0" />
+                                  ) : isImageNode ? (
+                                    <ImageIcon size={16} className="text-pink-400 shrink-0" />
+                                  ) : isLinkNode ? (
+                                    <LinkIcon size={16} className="text-cyan-400 shrink-0" />
+                                  ) : (
+                                    <MessageSquare size={16} className="text-indigo-400 shrink-0" />
+                                  )}
+                                  
+                                  <span className="text-sm font-medium text-slate-300 truncate">
+                                    {n.data.label || (isImageNode ? 'Imagen' : isLinkNode ? 'Enlace' : 'Sin título')}
+                                  </span>
+                                </div>
+                              )})}
                               
-                              {/* 👇 Icono dinámico 👇 */}
-                              {n.data.type === 'grupo' ? (
-                                <FolderClosed size={16} className="text-emerald-400" />
-                              ) : isImageNode ? (
-                                <ImageIcon size={16} className="text-pink-400" />
-                              ) : (
-                                <MessageSquare size={16} className="text-indigo-400" />
+                              {/* Mensaje visual por si vacías el inventario */}
+                              {globalNodes.filter(n => n.data.projectId === activeProjectId && !networkNodes.some(net => net.data.originalId === n.id) && n.type !== 'nota').length === 0 && (
+                                <div className="text-center text-slate-600 text-xs mt-4">
+                                  ¡Todas tus ideas están conectadas!
+                                </div>
                               )}
-                              
-                              <span className="text-sm font-medium text-slate-300 truncate">
-                                {/* Si es imagen y no tiene título, que diga "Imagen" en vez de "Sin título" */}
-                                {n.data.label || (isImageNode ? 'Imagen' : 'Sin título')}
-                              </span>
-                            </div>
-                          )})}
+
+                          </div>
+                        </div>
                       </aside>
 
                       {/* REACT FLOW */}
