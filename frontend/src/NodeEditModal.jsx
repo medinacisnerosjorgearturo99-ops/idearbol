@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Trash2, Plus, MessageSquare, GripVertical, ChevronLeft, Edit3, Folder, Image as ImageIcon } from 'lucide-react'; // 👈 IMPORTANTE: Añadimos ImageIcon
+import { X, Trash2, Plus, MessageSquare, GripVertical, ChevronLeft, Edit3, Folder, Image as ImageIcon } from 'lucide-react';
 
 export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDelete, projects = [] }) {
-  // 1. TODOS LOS HOOKS (USESTATE Y USEEFFECT) VAN AQUÍ ARRIBA, SIN IMPORTAR SI EL MODAL ESTÁ ABIERTO O CERRADO
   const [viewStack, setViewStack] = useState([]);
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
@@ -10,58 +9,56 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   const [newSubIdea, setNewSubIdea] = useState('');
   const [color, setColor] = useState('#3b82f6'); 
   const [projectId, setProjectId] = useState('');
-
-  // Estados mágicos para la imagen
-  const isImage = nodeData?.type === 'image' || nodeData?.data?.type === 'image';
   const [imageUrl, setImageUrl] = useState('');
   const [caption, setCaption] = useState('');
+  const [url, setUrl] = useState('');
+
+  // 👇 LA VALIDACIÓN CORRECTA 👇
+  const tipoNodo = nodeData?.type;
+  const tipoData = nodeData?.data?.type;
+
+  const isImage = tipoNodo === 'image' || tipoData === 'image';
+  const isNote = tipoNodo === 'nota' || tipoData === 'nota';
+  const isLink = tipoNodo === 'link' || tipoData === 'link';
+  
+  // ¡Aquí estaba el error! Los grupos siempre son 'custom' por fuera, pero 'grupo' por dentro:
+  const isGroup = tipoData === 'grupo';
 
   useEffect(() => {
     if (nodeData && isOpen) {
       setLabel(nodeData.data.label || '');
       setDescription(nodeData.data.description || '');
       setSubIdeas(nodeData.data.subIdeas || []);
-      setColor(nodeData.data.color || (nodeData.data.type === 'grupo' ? '#10b981' : '#3b82f6'));
+      setColor(nodeData.data.color || (isGroup ? '#10b981' : isNote ? '#fde047' : isLink ? '#06b6d4' : '#3b82f6'));
       setProjectId(nodeData.data.projectId || ''); 
       setViewStack([]);
-      
-      // Reiniciamos los valores de la imagen cada vez que se abre el modal
       setImageUrl(nodeData.data.imageUrl || '');
       setCaption(nodeData.data.caption || '');
+      setUrl(nodeData.data.url || '');
     }
-  }, [nodeData, isOpen]);
+  }, [nodeData, isOpen, isGroup, isNote, isLink]);
 
-  // 2. AHORA SÍ, EL IF. SI LLEGA HASTA AQUÍ Y ESTÁ CERRADO, SE REGRESA.
   if (!isOpen || !nodeData) return null;
 
-  // 3. FUNCIONES NORMALES (YA NO SON HOOKS)
-  const isGroup = nodeData.data.type === 'grupo' && viewStack.length === 0;
-
   const handleSave = () => {
-    // 👇 EL FRENO DE MANO
-    if (label.trim() === '') {
-      alert("¡Ey! El título es obligatorio. Ponle un nombre a tu nodo para no perderte.");
+    // 👇 Validación inteligente: Solo exigimos título a las Ideas y Grupos
+    if (!isNote && !isLink && label.trim() === '') {
+      alert("¡Ey! El título es obligatorio para las ideas y grupos.");
       return; 
     }
 
     if (viewStack.length === 0) {
       onSave(nodeData.id, { 
-        label: label.trim(), 
-        description, 
-        subIdeas, 
-        color, 
-        projectId,
-        imageUrl, 
-        caption   
+        label: label.trim(), description, subIdeas, color, projectId, imageUrl, caption, url 
       });
       onClose();
     } else {
       goBack(label.trim());
     }
-  }; // 👈 ¡AQUÍ TERMINA Y SE CIERRA EL HANDLESAVE!
+  };
 
-  // 👇 Y JUSTO DEBAJO, LIBRE E INDEPENDIENTE, VA EL HANDLECANCEL 👇
   const handleCancel = () => {
+    // Si la idea es nueva (no tiene título original) y cancelamos, la borramos de la BD
     if (!nodeData.data.label || nodeData.data.label.trim() === '') {
       onDelete(nodeData.id); 
     }
@@ -89,9 +86,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     const newStack = viewStack.slice(0, -1);
     
     const updatedParentSubIdeas = parentState.subIdeas.map(item => 
-      item.id === parentState.editingId 
-        ? { ...item, text: currentLabel, description, subIdeas } 
-        : item
+      item.id === parentState.editingId ? { ...item, text: currentLabel, description, subIdeas } : item
     );
 
     setLabel(parentState.label);
@@ -110,16 +105,14 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
     }
   };
 
-  // 👇 NUESTRA PALETA DE URGENCIAS/ESTADOS 👇
   const PRESET_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
   
-  // 4. EL RETURN DE HTML (Se mantiene igual que el tuyo)
   return (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
       <div className="bg-[#141923] border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
         
         {/* --- CABECERA --- */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#1A212E] rounded-t-2xl">
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-[#1A212E] rounded-t-2xl shrink-0">
           <div className="flex items-center gap-3">
             {viewStack.length > 0 ? (
               <button onClick={() => goBack(label)} className="text-slate-400 hover:text-white flex items-center gap-1 bg-slate-800 px-2 py-1 rounded-md transition-colors">
@@ -129,11 +122,18 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
               <Folder size={18} style={{ color }} />
             ) : isImage ? (
               <ImageIcon size={18} className="text-pink-500" />
+            ) : isNote ? (
+              <MessageSquare size={18} className="text-yellow-400" />
             ) : (
               <MessageSquare size={18} style={{ color }} />
             )}
             <h2 className="text-lg font-semibold text-slate-200">
-              {viewStack.length > 0 ? 'Configurando Sub-idea' : isGroup ? 'Configuración del Grupo' : isImage ? 'Editor de Imagen' : 'Editor de Idea'}
+              {viewStack.length > 0 ? 'Configurando Sub-idea' : 
+               isGroup ? 'Configuración del Grupo' : 
+               isNote ? '📝 Editor de Nota' : 
+               isLink ? '🔗 Editor de Enlace' : 
+               isImage ? '🖼️ Editor de Imagen' : 
+               '💡 Editor de Idea'}
             </h2>
           </div>
           <button onClick={handleCancel} className="text-slate-500 hover:text-white p-1 rounded-full hover:bg-slate-800 transition-colors">
@@ -144,59 +144,11 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
         {/* --- CUERPO DEL MODAL --- */}
         <div className="p-6 flex-1 overflow-y-auto space-y-6">
           
-          {/* TÍTULO Y COLOR (Para todos) */}
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
-                {isImage ? 'Nombre de la imagen' : 'Título'}
-              </label>
-              <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Escribe el nombre aquí..." className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500" />
-            </div>
-            
-            {viewStack.length === 0 && (
-              <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color / Estado</label>
-                <div className="flex items-center gap-2 bg-[#0B0F17] border border-slate-700 rounded-lg p-2 h-[50px]">
-                  
-                  {/* LOS BOTONES RÁPIDOS */}
-                  {PRESET_COLORS.map((preset) => (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setColor(preset)}
-                      className={`w-6 h-6 rounded-full transition-all duration-200 hover:scale-110 ${
-                        color === preset 
-                          ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0B0F17] shadow-[0_0_10px_rgba(255,255,255,0.3)]' 
-                          : 'border border-slate-700 opacity-70 hover:opacity-100'
-                      }`}
-                      style={{ backgroundColor: preset }}
-                      title="Seleccionar color rápido"
-                    />
-                  ))}
-
-                  {/* SEPARADOR VISUAL */}
-                  <div className="w-[1px] h-full bg-slate-700 mx-1"></div>
-
-                  {/* EL SELECTOR LIBRE (RGB) */}
-                  <div className="relative w-6 h-6 rounded-full overflow-hidden border border-slate-700 hover:scale-110 transition-transform" title="Color personalizado">
-                    <input 
-                      type="color" 
-                      value={color} 
-                      onChange={(e) => setColor(e.target.value)} 
-                      className="absolute -top-2 -left-2 w-10 h-10 cursor-pointer border-0 bg-transparent p-0" 
-                    />
-                  </div>
-                  
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* TELETRANSPORTADOR (Para todos) */}
+          {/* UBICACIÓN (Proyecto) - Visible para todos */}
           {viewStack.length === 0 && projects?.length > 0 && (
             <div>
               <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Ubicación (Proyecto)</label>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer appearance-none">
+              <select value={projectId} onChange={(e) => setProjectId(e.target.value)} className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500 cursor-pointer">
                 <option value="" disabled>Selecciona un proyecto...</option>
                 {projects.map((p) => (
                   <option key={p.id} value={p.id}>{p.name || p.title || 'Proyecto sin nombre'}</option>
@@ -205,10 +157,9 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
             </div>
           )}
 
-          {/* 👇 AQUÍ EMPIEZA LA DIVISIÓN MÁGICA 👇 */}
+          {/* 👇 SECCIÓN ESPECÍFICA POR TIPO DE NODO 👇 */}
           {isImage ? (
-            /* --- MODO IMAGEN --- */
-            <div className="space-y-6 border-t border-slate-800/60 pt-6 mt-2">
+            <div className="space-y-6">
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Archivo de Imagen</label>
                 {imageUrl ? (
@@ -227,43 +178,99 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Pie de Imagen (Caption)</label>
-                <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Ej. Referencia de la armadura..." className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500" />
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Pie de foto (Opcional)</label>
+                <input type="text" value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Ej. Referencia de personaje" className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg" />
               </div>
             </div>
+
+          ) : isLink ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Título del Enlace</label>
+                <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">URL del Enlace</label>
+                <input type="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..." className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg font-mono text-xs" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
+                <div className="flex gap-2">
+                  {['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e'].map(c => (
+                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          ) : isNote ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Título de la nota (Opcional)</label>
+                <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ej. Tareas pendientes" className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Contenido</label>
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={6} placeholder="Escribe aquí los detalles..." className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg resize-y" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color del papel</label>
+                <div className="flex items-center gap-4">
+                  <div className="flex gap-2">
+                    {['#fde047', '#fca5a5', '#bef264', '#67e8f9', '#c4b5fd'].map(c => (
+                      <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded border-2 ${color === c ? 'border-black scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                    ))}
+                  </div>
+                  <div className="w-px h-6 bg-slate-700"></div>
+                  <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer" />
+                </div>
+              </div>
+            </div>
+
           ) : (
-            /* --- MODO IDEA / GRUPO (Lo que ya tenías) --- */
+            /* --- MODO IDEA / GRUPO NORMAL --- */
             <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row gap-6">
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Título *</label>
+                  <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Escribe el nombre aquí..." className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg" />
+                </div>
+                {viewStack.length === 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
+                    <div className="flex gap-2 p-2 bg-[#0B0F17] border border-slate-700 rounded-lg h-[50px] items-center">
+                      {PRESET_COLORS.map((preset) => (
+                        <button key={preset} type="button" onClick={() => setColor(preset)} className={`w-6 h-6 rounded-full transition-transform hover:scale-110 ${color === preset ? 'ring-2 ring-white ring-offset-2 ring-offset-[#0B0F17]' : 'opacity-70'}`} style={{ backgroundColor: preset }} />
+                      ))}
+                      <div className="w-[1px] h-full bg-slate-700 mx-1"></div>
+                      <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
+                    </div>
+                  </div>
+                )}
+              </div>
+              
               <div>
                 <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Detalles / Descripción</label>
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Añade contexto o notas adicionales..." className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 focus:outline-none focus:border-indigo-500 resize-none" />
+                <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="Añade contexto o notas adicionales..." className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg p-3 text-slate-200 resize-y" />
               </div>
 
+              {/* Sub-Ideas */}
               {!isGroup && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">
-                    {viewStack.length > 0 ? 'Sub-ideas de esta sub-idea' : 'Sub-Ideas'}
-                  </label>
+                <div className="border-t border-slate-800/60 pt-4">
+                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">{viewStack.length > 0 ? 'Sub-ideas de esta sub-idea' : 'Sub-Ideas'}</label>
                   <div className="space-y-2 mb-3">
                     {subIdeas.map((idea) => (
                       <div key={idea.id} className="flex items-center gap-3 bg-[#0B0F17] border border-slate-800 p-2 rounded-lg group">
                         <GripVertical size={16} className="text-slate-700 cursor-grab" />
-                        <input type="checkbox" className="accent-indigo-500 h-4 w-4 rounded border-slate-700 bg-slate-800" />
                         <span className="text-sm text-slate-300 flex-1">{idea.text}</span>
-                        <button onClick={() => enterSubIdea(idea)} className="text-slate-500 hover:text-indigo-400 p-1 rounded transition-colors" title="Configurar detalles">
-                          <Edit3 size={14} />
-                        </button>
-                        <button onClick={() => deleteSubIdea(idea.id)} className="text-slate-600 hover:text-red-400 p-1 rounded transition-colors" title="Eliminar">
-                          <Trash2 size={14} />
-                        </button>
+                        <button onClick={() => enterSubIdea(idea)} className="text-slate-500 hover:text-indigo-400 p-1"><Edit3 size={14} /></button>
+                        <button onClick={() => deleteSubIdea(idea.id)} className="text-slate-600 hover:text-red-400 p-1"><Trash2 size={14} /></button>
                       </div>
                     ))}
                   </div>
                   <div className="flex gap-2">
                     <input type="text" value={newSubIdea} onChange={(e) => setNewSubIdea(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addSubIdea()} placeholder="Escribe y presiona Enter..." className="flex-1 bg-[#0B0F17] border border-slate-700 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
-                    <button onClick={addSubIdea} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-sm flex items-center gap-2">
-                      <Plus size={16} /> Añadir
-                    </button>
+                    <button onClick={addSubIdea} className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-2 rounded-lg text-sm flex items-center gap-2"><Plus size={16} /> Añadir</button>
                   </div>
                 </div>
               )}
@@ -272,20 +279,21 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
         </div>
 
         {/* --- PIE DEL MODAL --- */}
-        <div className="p-4 border-t border-slate-800 flex items-center justify-between bg-[#0B0F17]/50 rounded-b-2xl">
+        <div className="p-4 border-t border-slate-800 flex items-center justify-between bg-[#0B0F17]/50 rounded-b-2xl shrink-0">
           {viewStack.length === 0 ? (
             <button onClick={() => { onDelete(nodeData.id); onClose(); }} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 px-3 py-2 hover:bg-red-500/10 rounded-lg transition-colors">
-              <Trash2 size={16} /> Eliminar Completamente
+              <Trash2 size={16} /> Eliminar
             </button>
           ) : <div></div>}
           
           <div className="flex gap-3">
-            <button onClick={viewStack.length > 0 ? () => goBack(label) : handleCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">Cancelar</button>
+            <button onClick={handleCancel} className="text-sm text-slate-400 hover:text-slate-200 px-4 py-2">Cancelar</button>
             <button onClick={handleSave} className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-6 py-2 rounded-lg font-medium shadow-lg shadow-indigo-500/20">
               {viewStack.length > 0 ? 'Guardar y Volver' : 'Guardar Cambios'}
             </button>
           </div>
         </div>
+
       </div>
     </div>
   );

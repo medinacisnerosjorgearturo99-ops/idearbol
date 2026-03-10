@@ -10,6 +10,7 @@ const ideaNodeSchema = new mongoose.Schema({
   },
   description: { type: String },
   imageUrl: { type: String, default: '' },
+  url: { type: String, default: '' },
   caption: { type: String, default: '' },
   width: { type: Number },
   height: { type: Number },

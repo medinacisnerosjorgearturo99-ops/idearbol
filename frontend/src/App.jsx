@@ -2,12 +2,15 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
-  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon } from 'lucide-react';
+  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon} from 'lucide-react';
 import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode, getNodesBounds, getViewportForBounds } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
 import ImageNode from './components/ImageNode';
 import { toPng } from 'html-to-image';
+import NoteNode from './components/NoteNode';
+import LinkNode from './components/LinkNode';
+import { Link as LinkIcon, StickyNote } from 'lucide-react'; // Asegúrate de tener estos iconos
 
 import CustomNode from './CustomNode';
 import NetworkNode from './NetworkNode';
@@ -16,8 +19,8 @@ import NodeEditModal from './NodeEditModal';
 import ProjectModal from './ProjectModal';
 import AuthModal from './AuthModal';
 
-const nodeTypesCanvas = { custom: CustomNode, image: ImageNode };
-const nodeTypesNetwork = { network: CustomNode, image: ImageNode };
+const nodeTypesCanvas = { custom: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
+const nodeTypesNetwork = { network: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
 const edgeTypesNetwork = { gradient: GradientEdge };
 
 const hexToRGB = (hex) => {
@@ -116,22 +119,27 @@ const [projectViewports, setProjectViewports] = useState(() => {
             fetchBoards(currentUser._id);
 
             // Cargar TODOS los nodos en segundo plano para el buscador
-            // Cargar TODOS los nodos en segundo plano para el buscador
             Promise.all(formatted.map(p => fetch(`https://idearbol.onrender.com/api/nodes/${p.id}`).then(r => r.json())))
               .then(results => {
-                const all = results.flat().map(n => ({
-                  id: n._id,
-                  // 👇 1. Le avisamos que es imagen si le toca
-                  type: n.type === 'image' ? 'image' : 'custom',
-                  // 👇 2. Le pasamos el tamaño para que NO salte
-                  style: n.width && n.height ? { width: n.width, height: n.height } : {},
-                  data: { 
-                    label: n.label, description: n.description, projectId: n.projectId, 
-                    parentId: n.parentId, type: n.type, color: n.color,
-                    // 👇 3. Empacamos la foto y el texto
-                    imageUrl: n.imageUrl, caption: n.caption
-                  }
-                }));
+                const all = results.flat().map(n => {
+                  // 👇 LA CURA DE LA AMNESIA 👇
+                  let reactFlowType = 'custom';
+                  if (n.type === 'image') reactFlowType = 'image';
+                  if (n.type === 'nota') reactFlowType = 'nota';
+                  if (n.type === 'link') reactFlowType = 'link';
+
+                  return {
+                    id: n._id,
+                    type: reactFlowType, 
+                    // 👇 2. Le pasamos el tamaño para que NO salte
+                    style: n.width && n.height ? { width: n.width, height: n.height } : {},
+                    data: { 
+                      label: n.label, description: n.description, projectId: n.projectId, 
+                      parentId: n.parentId, type: n.type, color: n.color, url: n.url, // <-- ¡Agregué url por si acaso!
+                      imageUrl: n.imageUrl, caption: n.caption
+                    }
+                  };
+                });
                 setGlobalNodes(all);
               });
 
@@ -169,23 +177,37 @@ const [projectViewports, setProjectViewports] = useState(() => {
 
   useEffect(() => {
     if (activeProjectId) {
-      fetch(`https://idearbol.onrender.com/api/nodes/${activeProjectId}`).then(res => res.json()).then(data => {
-          const formattedNodes = data.map(n => ({
-            id: n._id, 
-            type: n.type === 'image' ? 'image' : 'custom', 
-            position: n.position || { x: 100, y: 100 },
-            // 👇 1. El tamaño
-            style: n.width && n.height ? { width: n.width, height: n.height } : {},
-            data: { 
-              label: n.label, type: n.type, description: n.description, color: n.color, 
-              parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas,
-              // 👇 2. La foto y el texto
-              imageUrl: n.imageUrl, caption: n.caption
-            }
-          }));
+      fetch(`https://idearbol.onrender.com/api/nodes/${activeProjectId}`)
+        .then(res => res.json())
+        .then(data => {
+          const formattedNodes = data.map(n => {
+            let reactFlowType = 'custom';
+            if (n.type === 'image') reactFlowType = 'image';
+            if (n.type === 'nota') reactFlowType = 'nota';
+            if (n.type === 'link') reactFlowType = 'link';
+
+            return {
+              id: n._id, 
+              type: reactFlowType, 
+              position: n.position || { x: 100, y: 100 },
+              
+              // 👇 AQUÍ PUSIMOS EL CANDADO EXACTAMENTE 👇
+              style: n.width && n.height ? { width: n.width, height: n.height } : (reactFlowType === 'nota' ? { width: 220, height: 220 } : {}),
+              
+              data: { 
+                label: n.label, type: n.type, description: n.description, color: n.color, 
+                parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas,
+                imageUrl: n.imageUrl, caption: n.caption,
+                url: n.url
+              }
+            };
+          });
           setNodes(formattedNodes);
-        }).catch(err => console.error(err));
-    } else setNodes([]);
+        })
+        .catch(err => console.error(err));
+    } else {
+      setNodes([]);
+    }
   }, [activeProjectId]);
 
   useEffect(() => {
@@ -623,8 +645,10 @@ const [projectViewports, setProjectViewports] = useState(() => {
         parentId: currentFolderId, 
         projectId: activeProjectId, 
         subIdeas: [], 
-        color: tipo === 'grupo' ? '#10b981' : tipo === 'image' ? '#ec4899' : '#3b82f6', 
-        position // 👈 Guardamos la posición del explorador en la BD
+        color: tipo === 'grupo' ? '#10b981' : tipo === 'nota' ? '#fde047' : '#06b6d4', 
+        position,
+        // 👇 ESTA LÍNEA ES EL ESCUDO:
+        isBoardSpecific: viewMode === 'connections' && tipo === 'nota' 
       };
       
       const res = await fetch(`https://idearbol.onrender.com/api/nodes`, { 
@@ -641,22 +665,37 @@ const [projectViewports, setProjectViewports] = useState(() => {
         return; 
       }
       
+      // Identificamos el tipo correcto para React Flow
+      let reactFlowType = 'custom';
+      if (tipo === 'image') reactFlowType = 'image';
+      if (tipo === 'nota') reactFlowType = 'nota';
+      if (tipo === 'link') reactFlowType = 'link';
+
       const newNode = { 
         id: dbNode._id, 
-        type: tipo === 'image' ? 'image' : 'custom', 
+        type: reactFlowType, 
         position: dbNode.position, 
+        // 👇 EL CANDADO DE TAMAÑO PARA LAS NOTAS 👇
+        style: reactFlowType === 'nota' ? { width: 220, height: 220 } : {}, 
         data: { ...dbNode } 
       };
       
-      setNodes((nds) => [...nds, newNode]); 
+      if (!payload.isBoardSpecific) {
+        setNodes((nds) => [...nds, newNode]); 
+      } 
       setGlobalNodes((prev) => [...prev, newNode]); 
 
-      // Si estamos en Conexiones, ¡lo ponemos en la pizarra oscura de inmediato!
+      // Si estamos en Conexiones, lo ponemos en la pizarra oscura
       if (viewMode === 'connections') {
+        let networkType = 'network';
+        if (tipo === 'image') networkType = 'image';
+        if (tipo === 'nota') networkType = 'nota';
+        if (tipo === 'link') networkType = 'link';
+
         const newNetworkNode = {
           id: `net-${dbNode._id}`,
-          type: tipo === 'image' ? 'image' : 'network',
-          position: netPosition, // 👈 FIX: Usamos la posición calculada para conexiones
+          type: networkType,
+          position: netPosition,
           style: {},
           data: { ...dbNode, originalId: dbNode._id }
         };
@@ -840,9 +879,9 @@ const [projectViewports, setProjectViewports] = useState(() => {
   // --- ATAJOS DE TECLADO GAMER (W, A, S, D) ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // 1. EL ESCUDO: Si el usuario está escribiendo en un cuadro de texto, lo dejamos en paz
+      // 1. EL ESCUDO DEFINITIVO: Si el modal está abierto, o si estás escribiendo, ignoramos el teclado
       const activeTag = document.activeElement.tagName.toLowerCase();
-      if (activeTag === 'input' || activeTag === 'textarea') return;
+      if (isModalOpen || activeTag === 'input' || activeTag === 'textarea') return;
 
       // 1.5. EL ESCUDO DE PIZARRAS: No crear nodos si estamos en el lobby de conexiones
       if (viewMode === 'connections' && !activeBoard) return;
@@ -855,16 +894,15 @@ const [projectViewports, setProjectViewports] = useState(() => {
       if (key === 'a') { e.preventDefault(); addNode('idea'); }
       if (key === 's') { e.preventDefault(); addNode('grupo'); }
       if (key === 'd') { e.preventDefault(); addNode('image'); }
-      if (key === 'w') { 
-        e.preventDefault(); 
-        console.log("La W está reservada para tu próximo tipo de nodo 🚀"); 
-      }
+      if (key === 'w') { e.preventDefault(); addNode('nota'); }
+      if (key === 'e') { e.preventDefault(); addNode('link'); }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  // 👇 Le avisamos al useEffect que preste atención a viewMode y activeBoard 👇
-  }, [activeProjectId, currentFolderId, viewMode, activeBoard]);
+    
+  // 👇 Le avisamos al useEffect que preste atención a isModalOpen 👇
+  }, [activeProjectId, currentFolderId, viewMode, activeBoard, isModalOpen]);
 
   return (
     <div className="flex flex-col h-screen font-sans bg-background">
@@ -1130,7 +1168,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
                         <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Elementos Disponibles</h3>
                         {globalNodes
                           .filter(n => n.data.projectId === activeProjectId)
-                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id)) 
+                          .filter(n => !networkNodes.some(net => net.data.originalId === n.id))
+                          .filter(n => n.type !== 'nota' && n.data?.type !== 'nota') // 👈 EL ESCUDO ANTI-NOTAS EN EL INVENTARIO
                           .map(n => {
                             // 👇 Detectamos si es imagen para pintar la UI correcta
                             const isImageNode = n.type === 'image' || n.data?.type === 'image';
@@ -1235,6 +1274,24 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4">
                   {isFabOpen && (
                     <div className="bg-[#141923] border border-slate-700 p-2 rounded-xl shadow-2xl flex flex-col gap-1 w-40">
+
+                      {/* BOTÓN DE NOTA */}
+                      <button
+                        onClick={() => { addNode('nota'); setIsFabOpen(false); }}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors w-full text-left whitespace-nowrap"
+                      >
+                        <StickyNote size={16} />
+                        Nueva Nota
+                      </button>
+
+                      {/* BOTÓN DE ENLACE */}
+                      <button
+                        onClick={() => { addNode('link'); setIsFabOpen(false); }}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors w-full text-left whitespace-nowrap"
+                      >
+                        <LinkIcon size={16} />
+                        Nuevo Enlace
+                      </button>
                       
                       <button onClick={() => addNode('idea')} className="text-left px-3 py-2 text-sm text-slate-300 hover:bg-blue-500/20 hover:text-blue-400 rounded-md transition-colors flex items-center gap-2">
                         <MessageSquare size={14} /> Nueva Idea
