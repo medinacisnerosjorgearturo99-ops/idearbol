@@ -1331,15 +1331,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           </Panel>
                         </ReactFlow>
 
-                        {/* --- EL MENÚ FLOTANTE PARA CAMBIAR LA LÍNEA --- */}
-                        {selectedEdgeId && (
-                          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 bg-[#141923]/95 backdrop-blur-md border border-indigo-500/50 p-2 rounded-xl shadow-[0_0_30px_rgba(99,102,241,0.2)] flex gap-2 z-[60] animate-fade-in-up">
-                            <span className="text-xs font-bold text-slate-400 self-center mr-2 ml-2 uppercase tracking-wider">Estilo:</span>
-                            <button onClick={() => changeEdgeShape('bezier')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Curva</button>
-                            <button onClick={() => changeEdgeShape('smoothstep')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Circuito</button>
-                            <button onClick={() => changeEdgeShape('straight')} className="px-3 py-1.5 bg-slate-800 hover:bg-indigo-600 text-white rounded-lg text-sm transition-colors cursor-pointer">Recta</button>
-                          </div>
-                        )}
+                        
 
                         {/* --- EL BASURERO FLOTANTE ANIMADO --- */}
                         {isDraggingNode && (
