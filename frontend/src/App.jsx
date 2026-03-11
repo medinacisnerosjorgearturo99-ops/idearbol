@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
-  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Trash2, Image as ImageIcon} from 'lucide-react';
+  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Download, Image, ImageOff, Sun, Trash2, Image as ImageIcon} from 'lucide-react';
 import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode, getNodesBounds, getViewportForBounds } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
@@ -39,14 +39,21 @@ function IdearbolApp() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
 
+  // 👇 1. ESTADO PARA LA CÁMARA 👇
+  const [isExportingLight, setIsExportingLight] = useState(false);
+
   // --- ESTADO PARA EL MODAL DE ABSORCIÓN ---
   const [confirmDrop, setConfirmDrop] = useState({ isOpen: false, sourceNode: null, targetGroup: null });
 
   // --- ESTADO PARA EL MENÚ DE LÍNEAS ---
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
 
-  // --- MEMORIA DE LA CÁMARA (VIEWPORT) ---
-  // --- MEMORIA A LARGO PLAZO DE LA CÁMARA ---
+  // 👇 RADARES PARA DETECTAR CLICS FUERA DE LOS MENÚS 👇
+  const fabRef = useRef(null);
+  const exportMenuRef = useRef(null);
+  const userMenuRef = useRef(null);
+
+// --- MEMORIA A LARGO PLAZO DE LA CÁMARA ---
 const [projectViewports, setProjectViewports] = useState(() => {
   // Al cargar la app, buscamos si hay memoria guardada en el navegador
   const memoriaGuardada = localStorage.getItem('idearbol_camara');
@@ -83,6 +90,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
   const [isFabOpen, setIsFabOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedNode, setSelectedNode] = useState(null);
+  // Estado para el menú de exportación
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const onNodesChange = useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
 
@@ -243,6 +252,31 @@ const [projectViewports, setProjectViewports] = useState(() => {
     }
   }, [activeProjectId, rfInstance]);
 
+  // 👇 HECHIZO: Cierra los menús si haces clic fuera de ellos 👇
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      // Si el menú flotante (+) está abierto y el clic no fue dentro de él...
+      if (fabRef.current && !fabRef.current.contains(event.target)) setIsFabOpen(false);
+      
+      // Si el menú de exportar está abierto y el clic no fue dentro de él...
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) setIsExportMenuOpen(false);
+      
+      // Si el menú de usuario está abierto y el clic no fue dentro de él...
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) setIsUserMenuOpen(false);
+    };
+
+    // Escuchamos cada clic en toda la página
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // 👇 NUEVA FUNCIÓN: Cierra todos los menús de la interfaz 👇
+  const closeAllMenus = useCallback(() => {
+    setIsFabOpen(false);
+    setIsExportMenuOpen(false);
+    setIsUserMenuOpen(false);
+  }, []);
+
   const handleLoginSuccess = (user) => { setCurrentUser(user); localStorage.setItem('idearbol_session', JSON.stringify(user)); };
   const handleLogout = () => { setCurrentUser(null); setIsUserMenuOpen(false); localStorage.removeItem('idearbol_session'); };
   const openLogin = () => { setAuthMode('login'); setIsAuthModalOpen(true); };
@@ -344,8 +378,10 @@ const [projectViewports, setProjectViewports] = useState(() => {
     }
   };
 
-  // --- FUNCIÓN MEJORADA PARA DESCARGAR LA PIZARRA ---
-  const handleDownloadImage = useCallback(() => {
+  // 👇 2. FUNCIÓN DE EXPORTACIÓN LIMPIA 👇
+  const handleDownloadImage = useCallback(async (mode = 'dark') => {
+    setIsExportMenuOpen(false); 
+    
     if (networkNodes.length === 0) {
       alert("¡La pizarra está vacía! Agrega ideas primero.");
       return;
@@ -354,50 +390,52 @@ const [projectViewports, setProjectViewports] = useState(() => {
     const viewportElement = document.querySelector('.react-flow__viewport');
     
     if (viewportElement) {
-      // 1. Mostramos un mensaje de que estamos trabajando en ello
-      setToastMessage('Generando imagen, por favor espera... ⏳');
+      try {
+        setToastMessage('Generando imagen, por favor espera... ⏳');
 
-      const nodesBounds = getNodesBounds(networkNodes);
-      
-      // Le damos un poco más de margen para que respire
-      const imageWidth = nodesBounds.width + 200;
-      const imageHeight = nodesBounds.height + 200;
+        // ¡Preparamos la pantalla si es modo claro!
+        if (mode === 'light') {
+          setIsExportingLight(true);
+          // Le damos a React 150ms exactos para pintar las líneas negras en la pantalla
+          await new Promise(resolve => setTimeout(resolve, 150)); 
+        }
 
-      const viewport = getViewportForBounds(
-        nodesBounds,
-        imageWidth,
-        imageHeight,
-        0.5, 
-        2    
-      );
+        const nodesBounds = getNodesBounds(networkNodes);
+        const imageWidth = nodesBounds.width + 200;
+        const imageHeight = nodesBounds.height + 200;
+        const viewport = getViewportForBounds(nodesBounds, imageWidth, imageHeight, 0.5, 2);
 
-      toPng(viewportElement, { 
-        backgroundColor: '#0B0F17',
-        width: imageWidth,
-        height: imageHeight,
-        style: {
-          width: `${imageWidth}px`, 
-          height: `${imageHeight}px`,
-          transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
-        },
-        // 👇 Estos dos parámetros ayudan a que falle menos 👇
-        pixelRatio: 2, 
-        skipFonts: true
-      })
-      .then((dataUrl) => {
+        const bgColor = mode === 'dark' ? '#0B0F17' : null;
+
+        const dataUrl = await toPng(viewportElement, { 
+          backgroundColor: bgColor,
+          width: imageWidth,
+          height: imageHeight,
+          style: {
+            width: `${imageWidth}px`, 
+            height: `${imageHeight}px`,
+            transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
+          },
+          pixelRatio: 2, 
+          skipFonts: true
+        });
+
+        // ¡Devolvemos todo a la normalidad!
+        if (mode === 'light') setIsExportingLight(false);
+
         const link = document.createElement('a');
-        link.download = `${activeBoard ? activeBoard.name : 'Nodara-Conexiones'}.png`;
+        link.download = `${activeBoard ? activeBoard.name : 'Nodara'}-${mode}.png`;
         link.href = dataUrl;
         link.click();
         
         setToastMessage('¡Pizarra exportada a la medida! 📸');
         setTimeout(() => setToastMessage(null), 3000);
-      })
-      .catch((err) => {
+      } catch (err) {
+        if (mode === 'light') setIsExportingLight(false); // Rescate en caso de error
         console.error('🚨 Error al exportar la imagen:', err);
-        setToastMessage('❌ Error de seguridad (CORS) con alguna imagen. Revisa F12.');
+        setToastMessage('❌ Error de seguridad con alguna imagen. Usa imágenes locales.');
         setTimeout(() => setToastMessage(null), 4000);
-      });
+      }
     }
   }, [activeBoard, networkNodes]);
 
@@ -566,16 +604,18 @@ const [projectViewports, setProjectViewports] = useState(() => {
     setNetworkEdges((eds) => eds.filter((e) => e.id !== edge.id));
   }, [setNetworkEdges]);
 
-  // Cuando le dan un solo clic a la línea, abrimos el menú
+  // Cuando le dan un solo clic a la línea
   const onEdgeClickNetwork = useCallback((event, edge) => {
-    event.stopPropagation(); // Evita que el clic se pase al fondo
+    event.stopPropagation(); 
     setSelectedEdgeId(edge.id);
-  }, []);
+    closeAllMenus(); // 👈 Agregamos esto para que cierre el botón de (+) o el de Exportar
+  }, [closeAllMenus]);
 
-  // Cuando el usuario toca el fondo negro del lienzo, cerramos el menú
+  // Cuando el usuario toca el fondo negro del lienzo
   const onPaneClickNetwork = useCallback(() => {
     setSelectedEdgeId(null);
-  }, []);
+    closeAllMenus(); // 👈 Agregamos esto
+  }, [closeAllMenus]);
 
   // La función que realmente le cambia la forma a la flecha
   const changeEdgeShape = (newShape) => {
@@ -944,6 +984,20 @@ const [projectViewports, setProjectViewports] = useState(() => {
     setNodes(nds => nds.map(n => ({ ...n, selected: false })));
   }, [currentFolderId]);
 
+  // 👇 3. INTERCEPTAMOS LOS CABLES JUSTO ANTES DE DIBUJARLOS 👇
+  const displayedNetworkEdges = React.useMemo(() => {
+    if (!isExportingLight) return networkEdges;
+    
+    return networkEdges.map(edge => {
+      const c = edge.data?.color?.toLowerCase() || '#ffffff';
+      if (c === '#ffffff' || c === '#fff') {
+        // Le pasamos la bandera y el color oscuro
+        return { ...edge, data: { ...edge.data, color: '#1e293b', isExportingLight: true } };
+      }
+      return edge;
+    });
+  }, [networkEdges, isExportingLight]);
+
   return (
     <div className="flex flex-col h-screen font-sans bg-background">
       {/* BARRA SUPERIOR */}
@@ -1027,7 +1081,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
 
         <div className="flex items-center">
           {currentUser ? (
-            <div className="relative">
+            <div className="relative" ref={userMenuRef}>
               <button onClick={() => setIsUserMenuOpen(!isUserMenuOpen)} className="w-8 h-8 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-sm font-medium text-white shadow-lg transition-colors">
                 {currentUser.initials}
               </button>
@@ -1128,6 +1182,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
                     nodeTypes={nodeTypesCanvas} 
                     onNodeDoubleClick={onNodeDoubleClick} 
                     onNodeDragStop={onNodeDragStop} 
+                    onPaneClick={closeAllMenus}
+                    onNodeClick={closeAllMenus}
                     fitView 
                     className="dark" 
                     nodesConnectable={false} 
@@ -1214,13 +1270,47 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           <Save size={14} /> Guardar Pizarra
                         </button>
 
-                        {/* El botón de Exportar a PNG */}
-                        <button 
-                          onClick={handleDownloadImage} 
-                          className="bg-purple-600/90 hover:bg-purple-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold border border-purple-500 backdrop-blur-sm shadow-xl flex items-center gap-2 transition-transform hover:scale-105"
-                        >
-                          <ImageIcon size={14} /> Exportar PNG
-                        </button>
+                        {/* EL NUEVO MENÚ DE EXPORTACIÓN */}
+                        <div className="relative" ref={exportMenuRef}>
+                          <button
+                            onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                            className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-3 py-2 border border-slate-700 hover:border-slate-500 rounded-lg transition-colors flex items-center gap-2 shadow-sm"
+                            title="Opciones de exportación"
+                          >
+                            <Download size={16} />
+                            <span className="text-sm font-medium hidden sm:inline">Exportar</span>
+                          </button>
+
+                          {isExportMenuOpen && (
+                            <div className="absolute top-full right-0 mt-2 bg-[#141923] border border-slate-700 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] p-2 w-64 z-50 flex flex-col gap-1 animate-in slide-in-from-top-2 fade-in duration-200">
+                              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 py-1 tracking-wider mb-1">Elige un formato</div>
+                              
+                              <button onClick={() => handleDownloadImage('dark')} className="flex items-center gap-3 p-2 hover:bg-slate-800 rounded-lg text-sm text-slate-300 hover:text-white transition-colors text-left group">
+                                <div className="p-1.5 bg-slate-800 group-hover:bg-[#0B0F17] rounded-md transition-colors"><Image size={16} className="text-indigo-400" /></div>
+                                <div>
+                                  <div className="font-semibold">Fondo Oscuro (Original)</div>
+                                  <div className="text-[10px] text-slate-500">Ideal para pantallas</div>
+                                </div>
+                              </button>
+                              
+                              <button onClick={() => handleDownloadImage('transparent')} className="flex items-center gap-3 p-2 hover:bg-slate-800 rounded-lg text-sm text-slate-300 hover:text-white transition-colors text-left group">
+                                <div className="p-1.5 bg-slate-800 group-hover:bg-[#0B0F17] rounded-md transition-colors"><ImageOff size={16} className="text-emerald-400" /></div>
+                                <div>
+                                  <div className="font-semibold">Transparente (Oscuro)</div>
+                                  <div className="text-[10px] text-slate-500">Sin fondo, mantiene colores</div>
+                                </div>
+                              </button>
+                              
+                              <button onClick={() => handleDownloadImage('light')} className="flex items-center gap-3 p-2 hover:bg-slate-800 rounded-lg text-sm text-slate-300 hover:text-white transition-colors text-left group">
+                                <div className="p-1.5 bg-slate-800 group-hover:bg-amber-500/10 rounded-md transition-colors"><Sun size={16} className="text-amber-400" /></div>
+                                <div>
+                                  <div className="font-semibold text-amber-400/90 group-hover:text-amber-400">Transparente (Modo Claro)</div>
+                                  <div className="text-[10px] text-slate-500">Adapta el blanco a negro</div>
+                                </div>
+                              </button>
+                            </div>
+                          )}
+                        </div>
 
                         <button 
                           onClick={() => setActiveBoard(null)} 
@@ -1233,12 +1323,26 @@ const [projectViewports, setProjectViewports] = useState(() => {
                       {/* INVENTARIO FILTRADO MÚLTIPLE */}
                       <aside className="w-64 bg-[#0B0F17] border-r border-slate-800 flex flex-col z-10 shadow-xl shrink-0 h-full overflow-hidden relative">
                         
-                        {/* 👇 EL HECHIZO PARA EMBELLECER LA BARRA EN CHROME/EDGE 👇 */}
+                        {/* 👇 HECHIZOS CSS GLOBALES 👇 */}
                         <style>{`
+                          /* 1. El scroll elegante... */
                           .scroll-elegante::-webkit-scrollbar { width: 6px; }
                           .scroll-elegante::-webkit-scrollbar-track { background: transparent; }
                           .scroll-elegante::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 20px; }
                           .scroll-elegante::-webkit-scrollbar-thumb:hover { background-color: #4f46e5; }
+
+                          /* 2. EL DISFRAZ MÁGICO (CABLES BLANCOS A NEGROS SIN ANIMACIÓN) */
+                          .export-light-mode .cable-blanco {
+                            stroke: #1e293b !important; 
+                            filter: none !important;
+                            transition: none !important; /* 👈 Apaga la animación para que salga oscuro al instante en la foto */
+                          }
+                          
+                          .export-light-mode .punta-blanca * {
+                            fill: #1e293b !important;
+                            stroke: #1e293b !important;
+                            transition: none !important; /* 👈 Apaga la animación en las flechas */
+                          }
                         `}</style>
 
                         {/* Cabecera Fija */}
@@ -1296,13 +1400,12 @@ const [projectViewports, setProjectViewports] = useState(() => {
                         </div>
                       </aside>
 
-                      {/* REACT FLOW */}
                       {/* --- ÁREA DEL LIENZO --- */}
                       <div className="flex-1 relative">
                         <ReactFlow 
                           nodes={networkNodes} 
-                          edges={networkEdges} 
-                          onNodesChange={onNetworkNodesChange} 
+                          edges={displayedNetworkEdges} // 👈 ¡¡¡CÁMBIALO AQUÍ!!!
+                          onNodesChange={onNetworkNodesChange}
                           onEdgesChange={onNetworkEdgesChange} 
                           onConnect={onConnectNetwork} 
                           isValidConnection={isValidConnectionNetwork}
@@ -1310,6 +1413,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           
                           onEdgeClick={onEdgeClickNetwork}
                           onPaneClick={onPaneClickNetwork}
+                          onNodeClick={closeAllMenus}
                           
                           onNodeDoubleClick={onNetworkNodeDoubleClick}
                           onNodeDragStart={onNodeDragStartNetwork}
@@ -1359,7 +1463,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
 
               {/* BOTÓN FLOTANTE (Solo en Explorador) */}
               { (viewMode === 'canvas' || (viewMode === 'connections' && activeBoard)) && (
-                <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4">
+                <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4 "ref={fabRef}>
                   {isFabOpen && (
                     <div className="bg-[#141923] border border-slate-700 p-2 rounded-xl shadow-2xl flex flex-col gap-1 w-40">
 
