@@ -14,6 +14,8 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   const [url, setUrl] = useState('');
   // 👇 ESTADO PARA EL ERROR DEL TÍTULO 👇
   const [titleError, setTitleError] = useState("");
+  // 👇 ESTADO PARA EL MODO DE LISTA 👇
+  const [isChecklist, setIsChecklist] = useState(false);
 
   // 👇 LA VALIDACIÓN CORRECTA 👇
   const tipoNodo = nodeData?.type;
@@ -31,8 +33,10 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
       setLabel(nodeData.data.label || '');
       setDescription(nodeData.data.description || '');
       setSubIdeas(nodeData.data.subIdeas || []);
+      setIsChecklist(nodeData.data.isChecklist || false);
       setColor(nodeData.data.color || (isGroup ? '#10b981' : isNote ? '#fde047' : isLink ? '#06b6d4' : '#3b82f6'));
       setProjectId(nodeData.data.projectId || ''); 
+      setIsChecklist(nodeData.data?.isChecklist || false);
       setViewStack([]);
       setImageUrl(nodeData.data.imageUrl || '');
       setCaption(nodeData.data.caption || '');
@@ -53,7 +57,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
 
     if (viewStack.length === 0) {
       onSave(nodeData.id, { 
-        label: label.trim(), description, subIdeas, color, projectId, imageUrl, caption, url 
+        label: label.trim(), description, subIdeas, color, projectId, imageUrl, caption, url, isChecklist 
       });
       onClose();
     } else {
@@ -79,25 +83,37 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   };
 
   const enterSubIdea = (ideaToEdit) => {
+    // Guardamos el estado del padre (incluyendo su color)
     setViewStack([...viewStack, { editingId: ideaToEdit.id, label, description, subIdeas, color }]);
+    
+    // Cargamos los datos de la sub-idea
     setLabel(ideaToEdit.text);
     setDescription(ideaToEdit.description || '');
     setSubIdeas(ideaToEdit.subIdeas || []);
+    
+    // 👇 LO NUEVO: Cargamos el color de la sub-idea (o gris si es nueva) 👇
+    setColor(ideaToEdit.color || '#64748b'); 
   };
 
-  const goBack = (currentLabel) => {
-    const parentState = viewStack[viewStack.length - 1];
-    const newStack = viewStack.slice(0, -1);
+  const goBack = (savedLabel) => {
+    const prevState = viewStack[viewStack.length - 1];
     
-    const updatedParentSubIdeas = parentState.subIdeas.map(item => 
-      item.id === parentState.editingId ? { ...item, text: currentLabel, description, subIdeas } : item
+    // 👇 1. Actualizamos la lista del padre inyectándole el COLOR a esta sub-idea 👇
+    const updatedSubIdeas = prevState.subIdeas.map(idea => 
+      idea.id === prevState.editingId 
+        ? { ...idea, text: savedLabel, description, subIdeas, color } // 👈 ¡Ojo aquí con el 'color'!
+        : idea
     );
 
-    setLabel(parentState.label);
-    setDescription(parentState.description);
-    setSubIdeas(updatedParentSubIdeas);
-    setColor(parentState.color);
-    setViewStack(newStack);
+    // 2. Restauramos los datos del padre
+    setLabel(prevState.label);
+    setDescription(prevState.description);
+    setSubIdeas(updatedSubIdeas);
+    
+    // 👇 3. Restauramos el COLOR original del padre 👇
+    setColor(prevState.color); 
+    
+    setViewStack(viewStack.slice(0, -1));
   };
 
   const handleFileUpload = (e) => {
@@ -271,7 +287,7 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
                 </div>
                 {/* 👆 FIN DEL BLOQUE DEL TÍTULO 👆 */}
 
-                {viewStack.length === 0 && (
+                
                   <div>
                     <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>
                     <div className="flex gap-2 p-2 bg-[#0B0F17] border border-slate-700 rounded-lg h-[50px] items-center">
@@ -282,7 +298,6 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
                       <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="w-8 h-8 rounded cursor-pointer border-0 p-0" />
                     </div>
                   </div>
-                )}
               </div>
               
               <div>
@@ -291,12 +306,32 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
               </div>
 
               {/* Sub-Ideas */}
+              {/* Sub-Ideas */}
               {!isGroup && (
                 <div className="border-t border-slate-800/60 pt-4">
-                  <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">{viewStack.length > 0 ? 'Sub-ideas de esta sub-idea' : 'Sub-Ideas'}</label>
+                  
+                  {/* 👇 ESTE ES EL NUEVO ENCABEZADO CON EL BOTÓN 👇 */}
+                  <div className="flex justify-between items-center mb-3">
+                    <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
+                      {viewStack.length > 0 ? 'Sub-ideas de esta sub-idea' : 'Sub-Ideas'}
+                    </label>
+                    <button 
+                      type="button"
+                      onClick={() => setIsChecklist(!isChecklist)}
+                      className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-colors border ${
+                        isChecklist 
+                          ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' 
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      {isChecklist ? '☑ Modo Checklist' : '• Modo Viñetas'}
+                    </button>
+                  </div>
+                  {/* 👆 FIN DEL NUEVO ENCABEZADO 👆 */}
+
                   <div className="space-y-2 mb-3">
                     {subIdeas.map((idea) => (
-                      <div key={idea.id} className="flex items-center gap-3 bg-[#0B0F17] border border-slate-800 p-2 rounded-lg group">
+                      <div key={idea.id} className="flex items-center gap-3 bg-[#141923] border border-slate-800 p-2 rounded-lg group" style={{ borderLeft: idea.color ? `3px solid ${idea.color}` : '3px solid transparent' }}>
                         <GripVertical size={16} className="text-slate-700 cursor-grab" />
                         <span className="text-sm text-slate-300 flex-1">{idea.text}</span>
                         <button onClick={() => enterSubIdea(idea)} className="text-slate-500 hover:text-indigo-400 p-1"><Edit3 size={14} /></button>

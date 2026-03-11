@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Folder, MessageSquare, ListChecks, Edit3 } from 'lucide-react';
-import { Handle, Position } from 'reactflow'; // <-- Herramientas para los puntitos
+import { Handle, Position, useReactFlow } from 'reactflow'; // <-- Herramientas para los puntitos
 
 const hexToRGB = (hex) => {
   let r = 0, g = 0, b = 0;
@@ -12,8 +12,36 @@ const hexToRGB = (hex) => {
   return `${r}, ${g}, ${b}`;
 };
 
-// 👇 Agregamos 'isConnectable' a las propiedades de la función
+// 👇 1. Asegúrate de recibir el 'id' entre las llaves 👇
 export default function CustomNode({ id, data, selected, isConnectable }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const { setNodes } = useReactFlow(); // 👈 2. Invocamos el motor
+
+  // 👇 3. LA MAGIA DE LOS CHECKBOXES 👇
+  const toggleSubIdea = async (ideaId) => {
+    // 1. Clonamos la lista y cambiamos el estado (true/false) de la que tocaste
+    const actualizadas = data.subIdeas.map(sub =>
+      sub.id === ideaId ? { ...sub, completed: !sub.completed } : sub
+    );
+
+    // 2. Magia de ordenamiento: Las incompletas arriba, las completas abajo
+    actualizadas.sort((a, b) => (a.completed === b.completed) ? 0 : a.completed ? 1 : -1);
+
+    // 3. Actualizamos la pantalla instantáneamente (Efecto visual)
+    setNodes((nds) => nds.map(n => n.id === id ? { ...n, data: { ...n.data, subIdeas: actualizadas } } : n));
+
+    // 4. Le avisamos a la base de datos por debajo del agua (Silencioso)
+    try {
+      await fetch(`https://idearbol.onrender.com/api/nodes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subIdeas: actualizadas })
+      });
+    } catch (err) { console.error("Error guardando el check:", err); }
+  };
+
+    
+
   const isGroup = data.type === 'grupo';
   const subIdeas = data.subIdeas || [];
   
@@ -106,14 +134,42 @@ export default function CustomNode({ id, data, selected, isConnectable }) {
               <ListChecks size={12} />
               <span className="text-[10px] font-medium uppercase tracking-wider">Sub-ideas ({subIdeas.length})</span>
             </div>
-            {subIdeas.slice(0, 3).map(idea => (
-              <div key={idea.id} className="flex items-center gap-2 bg-[#141923] p-1.5 rounded border border-slate-800">
-                <input type="checkbox" checked={idea.completed} readOnly className="h-3 w-3 accent-indigo-500 border-slate-700" />
-                <span className="text-[11px] text-slate-300 truncate">{idea.text}</span>
+            
+            {(isExpanded ? subIdeas : subIdeas.slice(0, 3)).map(idea => (
+              <div 
+                key={idea.id} 
+                className="flex items-center gap-2 bg-[#141923] p-1.5 rounded border border-slate-800"
+                style={{ borderLeft: idea.color ? `3px solid ${idea.color}` : '1px solid #1e293b' }}
+              >
+                {/* 👇 PREGUNTAMOS: ¿Es checklist o viñeta normal? 👇 */}
+                {data.isChecklist ? (
+                  <input 
+                    type="checkbox" 
+                    checked={idea.completed || false} 
+                    onChange={() => toggleSubIdea(idea.id)} 
+                    className="h-3 w-3 accent-indigo-500 border-slate-700 cursor-pointer shrink-0" 
+                  />
+                ) : (
+                  <div className="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0 mx-1" />
+                )}
+
+                {/* 👇 El texto se tacha SOLO si es checklist y está completado 👇 */}
+                <span className={`text-[11px] truncate flex-1 transition-all ${data.isChecklist && idea.completed ? 'text-slate-600 line-through' : 'text-slate-300'}`}>
+                  {idea.text}
+                </span>
               </div>
             ))}
+            
             {subIdeas.length > 3 && (
-              <div className="text-[10px] text-slate-600 pl-5">... y {subIdeas.length - 3} más</div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation(); 
+                  setIsExpanded(!isExpanded);
+                }}
+                className="w-full mt-1.5 text-[10px] font-bold uppercase tracking-wider text-indigo-400 hover:text-indigo-300 transition-colors text-center py-1.5 hover:bg-indigo-500/10 rounded-md"
+              >
+                {isExpanded ? 'Ocultar' : `Ver ${subIdeas.length - 3} más...`}
+              </button>
             )}
           </div>
         )}

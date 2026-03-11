@@ -149,7 +149,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                     data: { 
                       label: n.label, description: n.description, projectId: n.projectId, 
                       parentId: n.parentId, type: n.type, color: n.color, url: n.url, // <-- ¡Agregué url por si acaso!
-                      imageUrl: n.imageUrl, caption: n.caption
+                      imageUrl: n.imageUrl, caption: n.caption, isChecklist: n.isChecklist
                     }
                   };
                 });
@@ -211,7 +211,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 label: n.label, type: n.type, description: n.description, color: n.color, 
                 parentId: n.parentId, projectId: n.projectId, subIdeas: n.subIdeas,
                 imageUrl: n.imageUrl, caption: n.caption,
-                url: n.url
+                url: n.url, isChecklist: n.isChecklist
               }
             };
           });
