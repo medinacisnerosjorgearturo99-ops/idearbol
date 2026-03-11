@@ -19,6 +19,7 @@ import NodeEditModal from './NodeEditModal';
 import ProjectModal from './ProjectModal';
 import AuthModal from './AuthModal';
 
+
 const nodeTypesCanvas = { custom: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
 const nodeTypesNetwork = { network: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
 const edgeTypesNetwork = { gradient: GradientEdge };
@@ -149,7 +150,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                     data: { 
                       label: n.label, description: n.description, projectId: n.projectId, 
                       parentId: n.parentId, type: n.type, color: n.color, url: n.url, // <-- ¡Agregué url por si acaso!
-                      imageUrl: n.imageUrl, caption: n.caption, isChecklist: n.isChecklist
+                      imageUrl: n.imageUrl, caption: n.caption, isChecklist: n.isChecklist, subIdeas: n.subIdeas || []
                     }
                   };
                 });
@@ -557,6 +558,9 @@ const [projectViewports, setProjectViewports] = useState(() => {
       data: { 
         ...fullNode.data, 
         originalId: fullNode.id, 
+        // 👇 AQUÍ ESTÁ EL FIX: Usamos fullNode en lugar de nodeData 👇
+        subIdeas: fullNode.data?.subIdeas || [], 
+        isChecklist: fullNode.data?.isChecklist || false,
         color: fullNode.data?.color || fullNode?.color 
       }, 
     };

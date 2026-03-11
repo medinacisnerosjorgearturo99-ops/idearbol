@@ -46,10 +46,11 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
 
   if (!isOpen || !nodeData) return null;
 
-  const handleSave = () => { // O el nombre que tenga tu función
-    
-    // 👇 EL ESCUDO: Si el título está vacío, detenemos todo y mostramos el error
-    if (!label.trim()) {
+  const handleSave = () => {
+    const nodeType = nodeData?.data?.type || nodeData?.type;
+
+    // 👇 EL ESCUDO: ¡Ahora sí, la imagen, la nota y el link tienen pase libre! 👇
+    if (!label.trim() && nodeType !== 'image' && nodeType !== 'nota' && nodeType !== 'link') {
       setTitleError("El título no puede estar vacío");
       setTimeout(() => setTitleError(""), 3000);
       return; 
@@ -57,7 +58,16 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
 
     if (viewStack.length === 0) {
       onSave(nodeData.id, { 
-        label: label.trim(), description, subIdeas, color, projectId, imageUrl, caption, url, isChecklist 
+        // 👇 Si lo dejaron vacío, le ponemos su nombre por defecto dependiendo del tipo 👇
+        label: label.trim() || (nodeType === 'image' ? 'Imagen' : nodeType === 'link' ? 'Enlace' : ''), 
+        description, 
+        subIdeas, 
+        color, 
+        projectId, 
+        imageUrl, 
+        caption, 
+        url,
+        isChecklist
       });
       onClose();
     } else {

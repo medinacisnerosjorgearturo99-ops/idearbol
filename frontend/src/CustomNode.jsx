@@ -30,9 +30,12 @@ export default function CustomNode({ id, data, selected, isConnectable }) {
     // 3. Actualizamos la pantalla instantáneamente (Efecto visual)
     setNodes((nds) => nds.map(n => n.id === id ? { ...n, data: { ...n.data, subIdeas: actualizadas } } : n));
 
-    // 4. Le avisamos a la base de datos por debajo del agua (Silencioso)
+    // 👇 3.5 EL FIX INTELIGENTE: Buscamos su ID real (por si está en la pizarra de conexiones) 👇
+    const realId = data.originalId || id;
+
+    // 4. Le avisamos a la base de datos por debajo del agua usando el realId (Silencioso)
     try {
-      await fetch(`https://idearbol.onrender.com/api/nodes/${id}`, {
+      await fetch(`https://idearbol.onrender.com/api/nodes/${realId}`, { // 👈 AQUÍ USAMOS realId
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subIdeas: actualizadas })
