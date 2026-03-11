@@ -12,6 +12,8 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
   const [imageUrl, setImageUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [url, setUrl] = useState('');
+  // 👇 ESTADO PARA EL ERROR DEL TÍTULO 👇
+  const [titleError, setTitleError] = useState("");
 
   // 👇 LA VALIDACIÓN CORRECTA 👇
   const tipoNodo = nodeData?.type;
@@ -40,10 +42,12 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
 
   if (!isOpen || !nodeData) return null;
 
-  const handleSave = () => {
-    // 👇 Validación inteligente: Solo exigimos título a las Ideas y Grupos
-    if (!isNote && !isLink && !isImage && label.trim() === '') {
-      alert("¡Ey! El título es obligatorio para las ideas y grupos.");
+  const handleSave = () => { // O el nombre que tenga tu función
+    
+    // 👇 EL ESCUDO: Si el título está vacío, detenemos todo y mostramos el error
+    if (!label.trim()) {
+      setTitleError("El título no puede estar vacío");
+      setTimeout(() => setTitleError(""), 3000);
       return; 
     }
 
@@ -245,10 +249,28 @@ export default function NodeEditModal({ isOpen, onClose, nodeData, onSave, onDel
             /* --- MODO IDEA / GRUPO NORMAL --- */
             <div className="space-y-6">
               <div className="flex flex-col sm:flex-row gap-6">
-                <div className="flex-1">
+                
+                {/* 👇 BLOQUE DEL TÍTULO ACTUALIZADO 👇 */}
+                <div className="flex-1 relative">
                   <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Título *</label>
-                  <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Escribe el nombre aquí..." className="w-full bg-[#0B0F17] border border-slate-700 p-3 text-slate-200 rounded-lg" />
+                  <input 
+                    type="text" 
+                    value={label} 
+                    onChange={(e) => {
+                      setLabel(e.target.value);
+                      setTitleError(""); // Quitamos el error en cuanto empieza a escribir
+                    }} 
+                    placeholder="Escribe el nombre aquí..." 
+                    className={`w-full bg-[#0B0F17] border ${titleError ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.2)]' : 'border-slate-700'} p-3 text-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 transition-all`} 
+                  />
+                  {titleError && (
+                    <p className="absolute -bottom-5 left-0 text-red-400 text-xs font-medium animate-in fade-in slide-in-from-top-1">
+                      {titleError}
+                    </p>
+                  )}
                 </div>
+                {/* 👆 FIN DEL BLOQUE DEL TÍTULO 👆 */}
+
                 {viewStack.length === 0 && (
                   <div>
                     <label className="block text-xs font-medium text-slate-500 uppercase tracking-wider mb-2">Color</label>

@@ -39,6 +39,10 @@ function IdearbolApp() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authMode, setAuthMode] = useState('login');
 
+  // 👇 ESTADOS PARA LAS ALERTAS PREMIUM 👇
+  const [boardError, setBoardError] = useState(""); // Guarda el mensaje de error del input
+  const [boardToDelete, setBoardToDelete] = useState(null); // Guarda qué pizarra queremos borrar
+
   // 👇 1. ESTADO PARA LA CÁMARA 👇
   const [isExportingLight, setIsExportingLight] = useState(false);
 
@@ -330,8 +334,12 @@ const [projectViewports, setProjectViewports] = useState(() => {
   };
 
   const handleCreateBoard = async () => {
-    if (!newBoardName.trim()) return alert("Ponle un nombre a tu pizarra");
-    if (selectedProjectIds.length === 0) return alert("Selecciona al menos un proyecto");
+    if (!newBoardName.trim()) {
+      // 👇 En lugar del alert, usamos nuestro estado 👇
+      setBoardError("¡Necesitas darle un nombre a tu pizarra!");
+      setTimeout(() => setBoardError(""), 3000); // Desaparece solo en 3 segundos
+      return;
+    }
     
     const payload = { userId: currentUser._id, name: newBoardName };
     try {
@@ -440,14 +448,25 @@ const [projectViewports, setProjectViewports] = useState(() => {
   }, [activeBoard, networkNodes]);
 
   // --- FUNCIÓN PARA ELIMINAR UNA PIZARRA COMPLETA ---
-  const handleDeleteBoard = async (event, boardId) => {
-    event.stopPropagation(); // Evita que al dar clic al basurero se abra la pizarra
-    if (!window.confirm("¿Estás seguro de que quieres eliminar esta pizarra?")) return;
+  // 1. Cuando damos clic al basurero, solo abrimos nuestro modal elegante
+  const handleDeleteBoardClick = (event, board) => {
+    event.stopPropagation(); 
+    setBoardToDelete(board);
+  };
+
+  // 2. Cuando confirmamos en el modal, borramos de verdad
+  const confirmDeleteBoard = async () => {
+    if (!boardToDelete) return;
+    const boardId = boardToDelete._id;
     
     try {
       await fetch(`https://idearbol.onrender.com/api/boards/${boardId}`, { method: 'DELETE' });
-      setBoards(boards.filter(b => b._id !== boardId)); // La quitamos de la pantalla
+      setBoards(boards.filter(b => b._id !== boardId)); 
       if (activeBoard?._id === boardId) setActiveBoard(null);
+      
+      setBoardToDelete(null); // Cerramos el modal
+      setToastMessage('¡Pizarra eliminada! 🗑️');
+      setTimeout(() => setToastMessage(null), 3000);
     } catch (err) {
       console.error("Error al eliminar la pizarra:", err);
     }
@@ -1211,51 +1230,54 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 )}
 
                 {/* VISTA 3: EL NUEVO LIENZO DE CONEXIONES */}
-                {viewMode === 'connections' && (
-                <div className="h-full flex flex-col bg-[#0B0F17]">
+              {viewMode === 'connections' && (
+                <div className="absolute inset-0 flex flex-col bg-[#0B0F17] z-0">
                   {!activeBoard ? (
                     /* --- SUB-VISTA A: DASHBOARD DE PIZARRAS --- */
-                    <div className="p-10 max-w-5xl mx-auto w-full overflow-y-auto">
-                      <div className="flex justify-between items-center mb-8">
-                        <div>
-                          <h2 className="text-2xl font-bold text-white">Pizarras de Conexión</h2>
-                          <p className="text-slate-400">Cruza y conecta ideas de varios proyectos</p>
-                        </div>
-                        <button 
-                          onClick={() => { setIsCreatingBoard(true); setSelectedProjectIds(activeProjectId ? [activeProjectId] : []); }} 
-                          className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm text-white flex items-center gap-2 transition-colors"
-                        >
-                          <Plus size={18}/> Nueva Pizarra
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {boards.map(b => (
-                          <div 
-                            key={b._id} 
-                            onClick={() => { setActiveBoard(b); setNetworkNodes(b.nodes || []); setNetworkEdges(b.edges || []); }} 
-                            className="relative bg-[#141923] border border-slate-800 p-6 rounded-xl hover:border-indigo-500/50 cursor-pointer group transition-all"
+                    <div className="flex-1 overflow-y-auto scroll-elegante" style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
+                      <div className="p-10 max-w-5xl mx-auto w-full">
+                        <div className="flex justify-between items-center mb-8">
+                          <div>
+                            <h2 className="text-2xl font-bold text-white">Pizarras de Conexión</h2>
+                            <p className="text-slate-400">Cruza y conecta ideas de varios proyectos</p>
+                          </div>
+                          <button 
+                            onClick={() => { setIsCreatingBoard(true); setSelectedProjectIds(activeProjectId ? [activeProjectId] : []); }} 
+                            className="bg-indigo-600 hover:bg-indigo-500 px-4 py-2 rounded-lg text-sm text-white flex items-center gap-2 transition-colors"
                           >
-                            {/* Botón de eliminar Pizarra (Aparece al pasar el mouse) */}
-                            <button 
-                              onClick={(e) => handleDeleteBoard(e, b._id)}
-                              className="absolute top-4 right-4 text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-800/50 rounded-md hover:bg-red-500/10"
-                              title="Eliminar pizarra"
+                            <Plus size={18}/> Nueva Pizarra
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          {boards.map(b => (
+                            <div 
+                              key={b._id} 
+                              onClick={() => { setActiveBoard(b); setNetworkNodes(b.nodes || []); setNetworkEdges(b.edges || []); }} 
+                              className="relative bg-[#141923] border border-slate-800 p-6 rounded-xl hover:border-indigo-500/50 cursor-pointer group transition-all"
                             >
-                              <Trash2 size={16} />
-                            </button>
+                              {/* Botón de eliminar Pizarra */}
+                              <button 
+                                onClick={(e) => handleDeleteBoardClick(e, b)}
+                                className="absolute top-4 right-4 text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-slate-800/50 rounded-md hover:bg-red-500/10"
+                                title="Eliminar pizarra"
+                              >
+                                <Trash2 size={16} />
+                              </button>
 
-                            <div className="w-12 h-12 bg-indigo-500/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-indigo-500/20">
-                              <Share2 className="text-indigo-400" size={24} />
+                              <div className="w-12 h-12 bg-indigo-500/10 rounded-lg flex items-center justify-center mb-4 group-hover:bg-indigo-500/20">
+                                <Share2 className="text-indigo-400" size={24} />
+                              </div>
+                              <h3 className="font-bold text-lg text-white mb-1">{b.name}</h3>
+                              <p className="text-xs text-slate-500">{b.linkedProjects?.length || 0} proyectos vinculados</p>
                             </div>
-                            <h3 className="font-bold text-lg text-white mb-1">{b.name}</h3>
-                            <p className="text-xs text-slate-500">{b.linkedProjects?.length || 0} proyectos vinculados</p>
-                          </div>
-                        ))}
-                        {boards.length === 0 && (
-                          <div className="col-span-full text-center py-10 border border-dashed border-slate-800 rounded-xl text-slate-500">
-                            Aún no tienes pizarras. Crea una para empezar a conectar ideas.
-                          </div>
-                        )}
+                          ))}
+                          {boards.length === 0 && (
+                            <div className="col-span-full text-center py-10 border border-dashed border-slate-800 rounded-xl text-slate-500">
+                              Aún no tienes pizarras. Crea una para empezar a conectar ideas.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -1331,17 +1353,17 @@ const [projectViewports, setProjectViewports] = useState(() => {
                           .scroll-elegante::-webkit-scrollbar-thumb { background-color: #334155; border-radius: 20px; }
                           .scroll-elegante::-webkit-scrollbar-thumb:hover { background-color: #4f46e5; }
 
-                          /* 2. EL DISFRAZ MÁGICO (CABLES BLANCOS A NEGROS SIN ANIMACIÓN) */
+                          /* 2. EL DISFRAZ MÁGICO */
                           .export-light-mode .cable-blanco {
                             stroke: #1e293b !important; 
                             filter: none !important;
-                            transition: none !important; /* 👈 Apaga la animación para que salga oscuro al instante en la foto */
+                            transition: none !important; 
                           }
                           
                           .export-light-mode .punta-blanca * {
                             fill: #1e293b !important;
                             stroke: #1e293b !important;
-                            transition: none !important; /* 👈 Apaga la animación en las flechas */
+                            transition: none !important; 
                           }
                         `}</style>
 
@@ -1351,7 +1373,6 @@ const [projectViewports, setProjectViewports] = useState(() => {
                         </div>
                         
                         <div className="relative flex-1 min-h-0">
-                          {/* 👇 Le agregamos la clase "scroll-elegante" al div 👇 */}
                           <div className="absolute inset-0 overflow-y-auto p-4 space-y-3 pb-8 scroll-elegante" 
                                style={{ scrollbarWidth: 'thin', scrollbarColor: '#334155 transparent' }}>
                             
@@ -1404,7 +1425,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                       <div className="flex-1 relative">
                         <ReactFlow 
                           nodes={networkNodes} 
-                          edges={displayedNetworkEdges} // 👈 ¡¡¡CÁMBIALO AQUÍ!!!
+                          edges={displayedNetworkEdges} 
                           onNodesChange={onNetworkNodesChange}
                           onEdgesChange={onNetworkEdgesChange} 
                           onConnect={onConnectNetwork} 
@@ -1429,13 +1450,10 @@ const [projectViewports, setProjectViewports] = useState(() => {
                         >
                           <Background color="#1e293b" gap={20} />
                           <Controls />
-                          {/* 👇 2. ESTA ES TU NUEVA FIRMA ELEGANTE */}
                           <Panel position="bottom-right" className="text-[10px] text-slate-500 font-mono bg-[#0B0F17]/50 px-2 py-1 rounded-md backdrop-blur-sm border border-slate-800 pointer-events-none mb-1 mr-2 select-none">
                             v1.1.0
                           </Panel>
                         </ReactFlow>
-
-                        
 
                         {/* --- EL BASURERO FLOTANTE ANIMADO --- */}
                         {isDraggingNode && (
@@ -1516,10 +1534,10 @@ const [projectViewports, setProjectViewports] = useState(() => {
         </main>
       </div>
 
-      {/* MODAL NUEVA PIZARRA */}
+      {/* --- MODAL NUEVA PIZARRA --- */}
       {isCreatingBoard && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-          <div className="bg-[#141923] border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6">
+          <div className="bg-[#141923] border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
             <h3 className="text-xl font-bold text-white mb-4">Configurar Nueva Pizarra</h3>
             
             <div className="space-y-4">
@@ -1528,16 +1546,62 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 <input 
                   type="text" 
                   value={newBoardName} 
-                  onChange={(e) => setNewBoardName(e.target.value)} 
+                  onChange={(e) => { setNewBoardName(e.target.value); setBoardError(""); }} 
                   placeholder="Ej: Mapa de Personajes" 
-                  className="w-full bg-[#0B0F17] border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500" 
+                  // 👇 Si hay error, el borde se pone rojo brillante 👇
+                  className={`w-full bg-[#0B0F17] border ${boardError ? 'border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.2)]' : 'border-slate-700'} rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 transition-all`} 
                 />
+                {/* 👇 Aquí aparece el texto de error elegantemente 👇 */}
+                {boardError && (
+                  <p className="text-red-400 text-xs mt-2 font-medium animate-in fade-in slide-in-from-top-1">
+                    {boardError}
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex gap-3 mt-8">
-              <button onClick={() => setIsCreatingBoard(false)} className="flex-1 px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
-              <button onClick={handleCreateBoard} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors">Crear Pizarra</button>
+              <button onClick={() => { setIsCreatingBoard(false); setBoardError(""); }} className="flex-1 px-4 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+              <button onClick={handleCreateBoard} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors shadow-lg shadow-indigo-500/20">Crear Pizarra</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL ELEGANTE PARA BORRAR PIZARRA --- */}
+      {boardToDelete && (
+        <div className="fixed inset-0 bg-[#0B0F17]/70 backdrop-blur-sm flex items-center justify-center z-[200] p-4 transition-opacity">
+          <div className="bg-[#141923] border border-red-900/50 w-full max-w-sm rounded-2xl shadow-[0_0_50px_rgba(239,68,68,0.15)] p-6 transform transition-all animate-in zoom-in-95 duration-200">
+            
+            <div className="flex flex-col items-center text-center space-y-4">
+              {/* Icono decorativo rojo */}
+              <div className="w-14 h-14 rounded-full bg-red-500/10 flex items-center justify-center border border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                <Trash2 className="text-red-400" size={28} />
+              </div>
+              
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-2">¿Eliminar pizarra?</h3>
+                <p className="text-sm text-slate-400">
+                  Estás a punto de borrar <span className="text-slate-200 font-medium tracking-wide">"{boardToDelete.name}"</span>. Esta acción no se puede deshacer.
+                </p>
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-3 w-full pt-4 mt-2 border-t border-slate-800">
+                <button 
+                  onClick={() => setBoardToDelete(null)}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-300 bg-[#0B0F17] hover:bg-slate-800 border border-slate-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDeleteBoard}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-500 border border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)] hover:shadow-[0_0_25px_rgba(239,68,68,0.6)] transition-all"
+                >
+                  Sí, eliminar
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}
