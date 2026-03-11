@@ -2,7 +2,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, Plus, LayoutDashboard, Component, Folder, MessageSquare, ChevronRight, ChevronLeft, ArrowLeft, Edit3, 
   LogOut, Settings, Moon, UserCircle, LogIn, UserPlus, ListTree, LayoutGrid, Network, FolderClosed, 
-  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Download, Image, ImageOff, Sun, Trash2, Image as ImageIcon} from 'lucide-react';
+  FolderOpen, MoreHorizontal, GripVertical, Share2, Save, Download, Image, ImageOff, Sun, Trash2, Image as ImageIcon, Type} from 'lucide-react';
 import ReactFlow, { Background, Controls, Panel, applyNodeChanges, ReactFlowProvider, useReactFlow, MiniMap, useNodesState, useEdgesState, addEdge, ConnectionMode, getNodesBounds, getViewportForBounds } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { GoogleLogin } from '@react-oauth/google';
@@ -11,6 +11,7 @@ import { toPng } from 'html-to-image';
 import NoteNode from './components/NoteNode';
 import LinkNode from './components/LinkNode';
 import { Link as LinkIcon, StickyNote } from 'lucide-react'; // Asegúrate de tener estos iconos
+import TextNode from "./components/TextNode";
 
 import CustomNode from './CustomNode';
 import NetworkNode from './NetworkNode';
@@ -20,8 +21,8 @@ import ProjectModal from './ProjectModal';
 import AuthModal from './AuthModal';
 
 
-const nodeTypesCanvas = { custom: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
-const nodeTypesNetwork = { network: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode };
+const nodeTypesCanvas = { custom: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode, text: TextNode };
+const nodeTypesNetwork = { network: CustomNode, image: ImageNode, nota: NoteNode, link: LinkNode, text: TextNode };
 const edgeTypesNetwork = { gradient: GradientEdge };
 
 const hexToRGB = (hex) => {
@@ -141,6 +142,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
                   if (n.type === 'image') reactFlowType = 'image';
                   if (n.type === 'nota') reactFlowType = 'nota';
                   if (n.type === 'link') reactFlowType = 'link';
+                  if (n.type === 'text') reactFlowType = 'text';
 
                   return {
                     id: n._id,
@@ -199,6 +201,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
             if (n.type === 'image') reactFlowType = 'image';
             if (n.type === 'nota') reactFlowType = 'nota';
             if (n.type === 'link') reactFlowType = 'link';
+            if (n.type === 'text') reactFlowType = 'text';
 
             return {
               id: n._id, 
@@ -292,6 +295,8 @@ const [projectViewports, setProjectViewports] = useState(() => {
   const openEditProjectModal = (e, project) => { e.stopPropagation(); setProjectToEdit(project); setIsProjectModalOpen(true); };
   const handleGoHome = () => { if (projects.length > 0) { setActiveProjectId(projects[0].id); setCurrentFolderId('root'); } };
   const onNodeDoubleClick = (event, node) => {
+    if (node.type === 'text') return;
+
     if (node.data.type === 'grupo') setCurrentFolderId(node.id); 
     else { setSelectedNode(node); setIsModalOpen(true); }
   };
@@ -732,6 +737,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
       if (tipo === 'image') reactFlowType = 'image';
       if (tipo === 'nota') reactFlowType = 'nota';
       if (tipo === 'link') reactFlowType = 'link';
+      if (tipo === 'text') reactFlowType = 'text';
 
       const newNode = { 
         id: dbNode._id, type: reactFlowType, position: dbNode.position, 
@@ -748,6 +754,7 @@ const [projectViewports, setProjectViewports] = useState(() => {
         if (tipo === 'image') networkType = 'image';
         if (tipo === 'nota') networkType = 'nota';
         if (tipo === 'link') networkType = 'link';
+        if (tipo === 'text') networkType = 'text';
 
         const newNetworkNode = {
           id: `net-${dbNode._id}`, 
@@ -759,7 +766,12 @@ const [projectViewports, setProjectViewports] = useState(() => {
         setNetworkNodes((nds) => [...nds, newNetworkNode]);
       }
             
-      setIsFabOpen(false); setSelectedNode(newNode); setIsModalOpen(true);
+      setIsFabOpen(false); 
+      // 👇 ESCUDO: Si es texto, NO abras el modal 👇
+      if (tipo !== 'text') {
+        setSelectedNode(newNode); 
+        setIsModalOpen(true);
+      }
     } catch (error) {
       console.error("🚨 Error grave al crear el nodo:", error);
     }
@@ -1488,6 +1500,15 @@ const [projectViewports, setProjectViewports] = useState(() => {
                 <div className="absolute bottom-8 right-8 z-20 flex flex-col items-end gap-4 "ref={fabRef}>
                   {isFabOpen && (
                     <div className="bg-[#141923] border border-slate-700 p-2 rounded-xl shadow-2xl flex flex-col gap-1 w-40">
+
+                      {/* BOTÓN DE TEXTO LIBRE */}
+                      <button
+                        onClick={() => { addNode('text'); setIsFabOpen(false); }}
+                        className="flex items-center gap-3 px-4 py-3 text-sm text-slate-300 hover:text-white hover:bg-slate-800 transition-colors w-full text-left whitespace-nowrap"
+                      >
+                        <Type size={16} /> {/* El icono de la T que importamos */}
+                        Texto Libre
+                      </button>
 
                       {/* BOTÓN DE NOTA */}
                       <button

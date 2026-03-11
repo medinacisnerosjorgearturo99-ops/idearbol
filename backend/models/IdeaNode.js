@@ -5,7 +5,7 @@ const ideaNodeSchema = new mongoose.Schema({
   type: { 
     type: String, 
     // 👇 Abrimos la puerta a las imágenes, notas y links del futuro 👇
-    enum: ['idea', 'grupo', 'custom', 'image', 'nota', 'link'], 
+    enum: ['idea', 'grupo', 'custom', 'image', 'nota', 'link', 'text'], 
     default: 'idea' 
   },
   description: { type: String },
